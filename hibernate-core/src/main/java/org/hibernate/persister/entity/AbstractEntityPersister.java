@@ -2438,14 +2438,39 @@ public abstract class AbstractEntityPersister
 
 		boolean hasColumns = false;
 		for ( int i = 0; i < entityMetamodel.getPropertySpan(); i++ ) {
-			if ( includeProperty[i] && isPropertyOfTable( i, j )
-					&& !lobProperties.contains( i ) ) {
-				// this is a property of the table, which we are updating
-				update.addColumns(
-						getPropertyColumnNames( i ),
-						propertyColumnUpdateable[i], propertyColumnWriters[i]
-				);
-				hasColumns = hasColumns || getPropertyColumnSpan( i ) > 0;
+			if (isPropertyOfTable(i, j)) {
+				if (!lobProperties.contains(i)) {
+					final InDatabaseValueGenerationStrategy generationStrategy = entityMetamodel.getInDatabaseValueGenerationStrategies()[i];
+					if (generationStrategy != null && generationStrategy.getGenerationTiming().includesUpdate()) {
+						if (generationStrategy.referenceColumnsInSql()) {
+							final String[] values;
+							if (generationStrategy.getReferencedColumnValues() == null) {
+								values = propertyColumnWriters[i];
+							}
+							else {
+								final int numberOfColumns = propertyColumnWriters[i].length;
+								values = new String[numberOfColumns];
+								for ( int x = 0; x < numberOfColumns; x++ ) {
+									if ( generationStrategy.getReferencedColumnValues()[x] != null ) {
+										values[x] = generationStrategy.getReferencedColumnValues()[x];
+									}
+									else {
+										values[x] = propertyColumnWriters[i][x];
+									}
+								}
+							}
+							update.addColumns(getPropertyColumnNames(i), propertyColumnUpdateable[i], values);
+							hasColumns = hasColumns || getPropertyColumnSpan( i ) > 0;
+						}
+					}
+					else if (includeProperty[i]) {
+						update.addColumns(getPropertyColumnNames(i),
+								propertyColumnUpdateable[i],
+								propertyColumnWriters[i]
+								);
+						hasColumns = hasColumns || getPropertyColumnSpan( i ) > 0;
+					}
+				}
 			}
 		}
 
