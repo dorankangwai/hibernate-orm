@@ -117,6 +117,15 @@ public interface SharedSessionContractImplementor
 	boolean isClosed();
 
 	/**
+	 * Checks whether the session is open or is waiting for auto-close
+	 *
+	 * @return {@code true} if the session is closed or if it's waiting for auto-close; {@code false} otherwise.
+	 */
+	default boolean isOpenOrWaitingForAutoClose() {
+		return !isClosed();
+	}
+
+	/**
 	 * Performs a check whether the Session is open, and if not:<ul>
 	 *     <li>marks current transaction (if one) for rollback only</li>
 	 *     <li>throws an IllegalStateException (JPA defines the exception type)</li>
@@ -398,6 +407,10 @@ public interface SharedSessionContractImplementor
 	boolean shouldAutoClose();
 
 	boolean isAutoCloseSessionEnabled();
+
+	default boolean isQueryParametersValidationEnabled(){
+		return getFactory().getSessionFactoryOptions().isQueryParametersValidationEnabled();
+	}
 
 	/**
 	 * Get the load query influencers associated with this session.

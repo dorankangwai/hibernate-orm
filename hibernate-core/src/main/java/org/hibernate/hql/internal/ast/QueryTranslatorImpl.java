@@ -232,6 +232,11 @@ public class QueryTranslatorImpl implements FilterTranslator {
 			LOG.trace( "Converted antlr.ANTLRException", e );
 			throw new QueryException( e.getMessage(), hql );
 		}
+		catch ( IllegalArgumentException e ) {
+			// translate this into QueryException
+			LOG.trace( "Converted IllegalArgumentException", e );
+			throw new QueryException( e.getMessage(), hql );
+		}
 
 		//only needed during compilation phase...
 		this.enabledFilters = null;
@@ -353,7 +358,11 @@ public class QueryTranslatorImpl implements FilterTranslator {
 
 		final QueryNode query = (QueryNode) sqlAst;
 		final boolean hasLimit = queryParameters.getRowSelection() != null && queryParameters.getRowSelection().definesLimits();
-		final boolean needsDistincting = ( query.getSelectClause().isDistinct() || hasLimit ) && containsCollectionFetches();
+		final boolean needsDistincting = (
+				query.getSelectClause().isDistinct() ||
+				getEntityGraphQueryHint() != null ||
+				hasLimit )
+		&& containsCollectionFetches();
 
 		QueryParameters queryParametersToUse;
 		if ( hasLimit && containsCollectionFetches() ) {

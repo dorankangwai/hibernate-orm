@@ -4,7 +4,7 @@
  * License: GNU Lesser General Public License (LGPL), version 2.1 or later.
  * See the lgpl.txt file in the root directory or <http://www.gnu.org/licenses/lgpl-2.1.html>.
  */
-package org.hibernate.test.util.jdbc;
+package org.hibernate.testing.jdbc;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -35,6 +35,13 @@ public class ConnectionProviderDelegate implements
 
 	private ConnectionProvider connectionProvider;
 
+	public ConnectionProviderDelegate() {
+	}
+
+	public ConnectionProviderDelegate(ConnectionProvider connectionProvider) {
+		this.connectionProvider = connectionProvider;
+	}
+
 	@Override
 	public void injectServices(ServiceRegistryImplementor serviceRegistry) {
 		this.serviceRegistry = serviceRegistry;
@@ -42,16 +49,18 @@ public class ConnectionProviderDelegate implements
 
 	@Override
 	public void configure(Map configurationValues) {
-		@SuppressWarnings("unchecked")
-		Map<String, Object> settings = new HashMap<>( configurationValues );
-		settings.remove( AvailableSettings.CONNECTION_PROVIDER );
-		connectionProvider = ConnectionProviderInitiator.INSTANCE.initiateService(
-				settings,
-				serviceRegistry
-		);
-		if ( connectionProvider instanceof Configurable ) {
-			Configurable configurableConnectionProvider = (Configurable) connectionProvider;
-			configurableConnectionProvider.configure( settings );
+		if ( connectionProvider == null ) {
+			@SuppressWarnings("unchecked")
+			Map<String, Object> settings = new HashMap<>( configurationValues );
+			settings.remove( AvailableSettings.CONNECTION_PROVIDER );
+			connectionProvider = ConnectionProviderInitiator.INSTANCE.initiateService(
+					settings,
+					serviceRegistry
+			);
+			if ( connectionProvider instanceof Configurable ) {
+				Configurable configurableConnectionProvider = (Configurable) connectionProvider;
+				configurableConnectionProvider.configure( settings );
+			}
 		}
 	}
 
