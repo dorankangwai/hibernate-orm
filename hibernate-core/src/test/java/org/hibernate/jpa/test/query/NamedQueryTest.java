@@ -18,7 +18,7 @@ import javax.persistence.Query;
 
 import org.hibernate.Session;
 import org.hibernate.jpa.test.BaseEntityManagerFunctionalTestCase;
-
+import org.hibernate.query.NativeQuery;
 import org.hibernate.testing.TestForIssue;
 import org.junit.After;
 import org.junit.Before;
@@ -79,8 +79,8 @@ public class NamedQueryTest extends BaseEntityManagerFunctionalTestCase {
 					 assertEquals( 1, list.size() );
 
 					 final Session session = entityManager.unwrap( Session.class );
-					 final org.hibernate.query.Query sessionQuery = session.createQuery( "select g from Game g where title = ?" );
-					 sessionQuery.setParameter( 0, GAME_TITLES[0] );
+					 final org.hibernate.query.Query sessionQuery = session.createQuery( "select g from Game g where title = ?1" );
+					 sessionQuery.setParameter( 1, GAME_TITLES[0] );
 					 list = sessionQuery.getResultList();
 
 					 query.setParameter( 1, GAME_TITLES[0] );
@@ -99,7 +99,7 @@ public class NamedQueryTest extends BaseEntityManagerFunctionalTestCase {
 
 					 final Session session = entityManager.unwrap( Session.class );
 					 final org.hibernate.query.Query sessionQuery = session.getNamedQuery( "NamedQuery" );
-					 sessionQuery.setParameter( 0, GAME_TITLES[0] );
+					 sessionQuery.setParameter( 1, GAME_TITLES[0] );
 					 list = sessionQuery.getResultList();
 
 					 query.setParameter( 1, GAME_TITLES[0] );
@@ -130,7 +130,7 @@ public class NamedQueryTest extends BaseEntityManagerFunctionalTestCase {
 					 final Session session = entityManager.unwrap( Session.class );
 					 final org.hibernate.query.Query sessionQuery = session.createSQLQuery(
 							 "select * from Game g where title = ?" );
-					 sessionQuery.setParameter( 0, GAME_TITLES[0] );
+					 sessionQuery.setParameter( 1, GAME_TITLES[0] );
 					 list = sessionQuery.getResultList();
 
 					 query.setParameter( 1, GAME_TITLES[0] );
@@ -150,7 +150,7 @@ public class NamedQueryTest extends BaseEntityManagerFunctionalTestCase {
 					 final Session session = entityManager.unwrap( Session.class );
 					 final org.hibernate.query.Query sessionQuery = session.getNamedNativeQuery(
 							 "NamedNativeQuery" );
-					 sessionQuery.setParameter( 0, GAME_TITLES[0] );
+					 sessionQuery.setParameter( 1, GAME_TITLES[0] );
 					 list = sessionQuery.getResultList();
 
 					 query.setParameter( 1, GAME_TITLES[0] );
@@ -159,8 +159,27 @@ public class NamedQueryTest extends BaseEntityManagerFunctionalTestCase {
 		);
 	}
 
+	@Test
+	@TestForIssue(jiraKey = "HHH-12621")
+	public void testNativeQueriesFromNamedQueriesDoNotShareQuerySpaces() {
+		doInJPA( this::entityManagerFactory, entityManager -> {
+			Query originalQuery = entityManager.createNativeQuery( "select g from Game g where title = ?1" );
+			entityManager.getEntityManagerFactory().addNamedQuery( "myQuery", originalQuery );
+
+			NativeQuery<?> query1 = entityManager.createNamedQuery( "myQuery" ).unwrap( NativeQuery.class );
+			query1.addSynchronizedQuerySpace( "newQuerySpace" );
+
+			assertEquals( 1, query1.getSynchronizedQuerySpaces().size() );
+			assertEquals( "newQuerySpace", query1.getSynchronizedQuerySpaces().iterator().next() );
+
+			NativeQuery<?> query2 = entityManager.createNamedQuery( "myQuery" ).unwrap( NativeQuery.class );
+
+			assertEquals( 0, query2.getSynchronizedQuerySpaces().size() );
+		} );
+	}
+
 	@Entity(name = "Game")
-	@NamedQueries(@NamedQuery(name = "NamedQuery", query = "select g from Game g where title = ?"))
+	@NamedQueries(@NamedQuery(name = "NamedQuery", query = "select g from Game g where title = ?1"))
 	@NamedNativeQueries(@NamedNativeQuery(name = "NamedNativeQuery", query = "select * from Game g where title = ?"))
 	public static class Game {
 		private Long id;

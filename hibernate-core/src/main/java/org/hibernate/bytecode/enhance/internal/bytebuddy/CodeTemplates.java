@@ -14,16 +14,26 @@ import java.util.Map;
 import org.hibernate.Hibernate;
 import org.hibernate.bytecode.enhance.internal.tracker.CompositeOwnerTracker;
 import org.hibernate.bytecode.enhance.internal.tracker.DirtyTracker;
+import org.hibernate.bytecode.enhance.internal.tracker.NoopCollectionTracker;
 import org.hibernate.bytecode.enhance.internal.tracker.SimpleCollectionTracker;
 import org.hibernate.bytecode.enhance.internal.tracker.SimpleFieldTracker;
 import org.hibernate.bytecode.enhance.spi.CollectionTracker;
 import org.hibernate.bytecode.enhance.spi.EnhancerConstants;
 import org.hibernate.bytecode.enhance.spi.interceptor.LazyAttributeLoadingInterceptor;
-import org.hibernate.engine.spi.ExtendedSelfDirtinessTracker;
 import org.hibernate.engine.spi.CompositeOwner;
 import org.hibernate.engine.spi.CompositeTracker;
+import org.hibernate.engine.spi.ExtendedSelfDirtinessTracker;
+import org.hibernate.engine.spi.PersistentAttributeInterceptor;
 
 import net.bytebuddy.asm.Advice;
+import net.bytebuddy.description.field.FieldDescription;
+import net.bytebuddy.description.method.MethodDescription;
+import net.bytebuddy.description.type.TypeDescription;
+import net.bytebuddy.implementation.bytecode.StackManipulation;
+import net.bytebuddy.implementation.bytecode.assign.Assigner;
+import net.bytebuddy.implementation.bytecode.member.MethodInvocation;
+import net.bytebuddy.implementation.bytecode.member.MethodVariableAccess;
+import net.bytebuddy.jar.asm.Opcodes;
 
 class CodeTemplates {
 
@@ -83,13 +93,38 @@ class CodeTemplates {
 		}
 	}
 
-	static class AreCollectionFieldsDirty {
+	static class GetDirtyAttributesWithoutCollections {
+		@Advice.OnMethodExit
+		static void $$_hibernate_getDirtyAttributes(
+				@Advice.Return(readOnly = false) String[] returned,
+				@Advice.FieldValue(value = EnhancerConstants.TRACKER_FIELD_NAME) DirtyTracker $$_hibernate_tracker) {
+			returned = $$_hibernate_tracker == null ? new String[0] : $$_hibernate_tracker.get();
+		}
+	}
+
+	static class GetCollectionTrackerWithoutCollections {
+		@Advice.OnMethodExit
+		static void $$_hibernate_getCollectionTracker( @Advice.Return(readOnly = false) CollectionTracker returned) {
+			returned = NoopCollectionTracker.INSTANCE;
+		}
+	}
+
+	static class AreFieldsDirty {
 		@Advice.OnMethodExit
 		static void $$_hibernate_hasDirtyAttributes(
 				@Advice.This ExtendedSelfDirtinessTracker self,
 				@Advice.Return(readOnly = false) boolean returned,
 				@Advice.FieldValue(value = EnhancerConstants.TRACKER_FIELD_NAME, readOnly = false) DirtyTracker $$_hibernate_tracker) {
 			returned = ( $$_hibernate_tracker != null && !$$_hibernate_tracker.isEmpty() ) || self.$$_hibernate_areCollectionFieldsDirty();
+		}
+	}
+
+	static class AreFieldsDirtyWithoutCollections {
+		@Advice.OnMethodExit
+		static void $$_hibernate_hasDirtyAttributes(
+				@Advice.Return(readOnly = false) boolean returned,
+				@Advice.FieldValue(value = EnhancerConstants.TRACKER_FIELD_NAME) DirtyTracker $$_hibernate_tracker) {
+			returned = $$_hibernate_tracker != null && !$$_hibernate_tracker.isEmpty();
 		}
 	}
 
@@ -102,6 +137,16 @@ class CodeTemplates {
 				$$_hibernate_tracker.clear();
 			}
 			self.$$_hibernate_clearDirtyCollectionNames();
+		}
+	}
+
+	static class ClearDirtyAttributesWithoutCollections {
+		@Advice.OnMethodEnter
+		static void $$_hibernate_clearDirtyAttributes(
+				@Advice.FieldValue(value = EnhancerConstants.TRACKER_FIELD_NAME) DirtyTracker $$_hibernate_tracker) {
+			if ( $$_hibernate_tracker != null ) {
+				$$_hibernate_tracker.clear();
+			}
 		}
 	}
 
@@ -194,7 +239,7 @@ class CodeTemplates {
 		static void $$_hibernate_clearDirtyCollectionNames(
 				@FieldName String fieldName,
 				@FieldValue Collection<?> collection,
-				@Advice.Argument(0) LazyAttributeLoadingInterceptor lazyInterceptor,
+				@Advice.Argument(value = 0, readOnly = false) LazyAttributeLoadingInterceptor lazyInterceptor,
 				@Advice.FieldValue(EnhancerConstants.TRACKER_COLLECTION_NAME) CollectionTracker $$_hibernate_collectionTracker) {
 			if ( lazyInterceptor == null || lazyInterceptor.isAttributeLoaded( fieldName ) ) {
 				if ( collection == null ) {
@@ -212,7 +257,7 @@ class CodeTemplates {
 		static void $$_hibernate_clearDirtyCollectionNames(
 				@FieldName String fieldName,
 				@FieldValue Map<?, ?> map,
-				@Advice.Argument(0) LazyAttributeLoadingInterceptor lazyInterceptor,
+				@Advice.Argument(value = 0, readOnly = false) LazyAttributeLoadingInterceptor lazyInterceptor,
 				@Advice.FieldValue(EnhancerConstants.TRACKER_COLLECTION_NAME) CollectionTracker $$_hibernate_collectionTracker) {
 			if ( lazyInterceptor == null || lazyInterceptor.isAttributeLoaded( fieldName ) ) {
 				if ( map == null ) {
@@ -241,7 +286,7 @@ class CodeTemplates {
 		@Advice.OnMethodEnter
 		static void $$_hibernate_removeDirtyFields(
 				@Advice.Argument(value = 0, readOnly = false) LazyAttributeLoadingInterceptor lazyInterceptor,
-				@Advice.FieldValue(EnhancerConstants.TRACKER_COLLECTION_NAME) Object $$_hibernate_attributeInterceptor) {
+				@Advice.FieldValue(value = EnhancerConstants.INTERCEPTOR_FIELD_NAME) PersistentAttributeInterceptor $$_hibernate_attributeInterceptor) {
 			if ( $$_hibernate_attributeInterceptor instanceof LazyAttributeLoadingInterceptor ) {
 				lazyInterceptor = (LazyAttributeLoadingInterceptor) $$_hibernate_attributeInterceptor;
 			}
@@ -321,9 +366,9 @@ class CodeTemplates {
 		static void enter(@FieldValue Collection<?> field, @Advice.Argument(0) Collection<?> argument, @MappedBy String mappedBy) {
 			if ( field != null && Hibernate.isPropertyInitialized( field, mappedBy ) ) {
 				Object[] array = field.toArray();
-				for ( int i = 0; i < array.length; i++ ) {
-					if ( argument == null || !argument.contains( array[i] ) ) {
-						setterNull( array[i], null );
+				for ( Object array1 : array ) {
+					if ( argument == null || !argument.contains( array1 ) ) {
+						setterNull( array1, null );
 					}
 				}
 			}
@@ -333,9 +378,9 @@ class CodeTemplates {
 		static void exit(@Advice.This Object self, @Advice.Argument(0) Collection<?> argument, @MappedBy String mappedBy) {
 			if ( argument != null && Hibernate.isPropertyInitialized( argument, mappedBy ) ) {
 				Object[] array = argument.toArray();
-				for ( int i = 0; i < array.length; i++ ) {
-					if ( Hibernate.isPropertyInitialized( array[i], mappedBy ) && getter( array[i] ) != self ) {
-						setterSelf( array[i], self );
+				for ( Object array1 : array ) {
+					if ( Hibernate.isPropertyInitialized( array1, mappedBy ) && getter( array1 ) != self ) {
+						setterSelf( array1, self );
 					}
 				}
 			}
@@ -362,9 +407,9 @@ class CodeTemplates {
 		static void enter(@FieldValue Map<?, ?> field, @Advice.Argument(0) Map<?, ?> argument, @MappedBy String mappedBy) {
 			if ( field != null && Hibernate.isPropertyInitialized( field, mappedBy ) ) {
 				Object[] array = field.values().toArray();
-				for ( int i = 0; i < array.length; i++ ) {
-					if ( argument == null || !argument.values().contains( array[i] ) ) {
-						setterNull( array[i], null );
+				for ( Object array1 : array ) {
+					if ( argument == null || !argument.values().contains( array1 ) ) {
+						setterNull( array1, null );
 					}
 				}
 			}
@@ -374,9 +419,9 @@ class CodeTemplates {
 		static void exit(@Advice.This Object self, @Advice.Argument(0) Map<?, ?> argument, @MappedBy String mappedBy) {
 			if ( argument != null && Hibernate.isPropertyInitialized( argument, mappedBy ) ) {
 				Object[] array = argument.values().toArray();
-				for ( int i = 0; i < array.length; i++ ) {
-					if ( Hibernate.isPropertyInitialized( array[i], mappedBy ) && getter( array[i] ) != self ) {
-						setterSelf( array[i], self );
+				for ( Object array1 : array ) {
+					if ( Hibernate.isPropertyInitialized( array1, mappedBy ) && getter( array1 ) != self ) {
+						setterSelf( array1, self );
 					}
 				}
 			}
@@ -430,9 +475,9 @@ class CodeTemplates {
 		static void enter(@Advice.This Object self, @FieldValue Collection<?> field, @Advice.Argument(0) Collection<?> argument, @MappedBy String mappedBy) {
 			if ( field != null && Hibernate.isPropertyInitialized( field, mappedBy ) ) {
 				Object[] array = field.toArray();
-				for ( int i = 0; i < array.length; i++ ) {
-					if ( argument == null || !argument.contains( array[i] ) ) {
-						getter( array[i] ).remove( self );
+				for ( Object array1 : array ) {
+					if ( argument == null || !argument.contains( array1 ) ) {
+						getter( array1 ).remove( self );
 					}
 				}
 			}
@@ -442,9 +487,9 @@ class CodeTemplates {
 		static void exit(@Advice.This Object self, @Advice.Argument(0) Collection<?> argument, @MappedBy String mappedBy) {
 			if ( argument != null && Hibernate.isPropertyInitialized( argument, mappedBy ) ) {
 				Object[] array = argument.toArray();
-				for ( int i = 0; i < array.length; i++ ) {
-					if ( Hibernate.isPropertyInitialized( array[i], mappedBy ) ) {
-						Collection<Object> c = getter( array[i] );
+				for ( Object array1 : array ) {
+					if ( Hibernate.isPropertyInitialized( array1, mappedBy ) ) {
+						Collection<Object> c = getter( array1 );
 						if ( c != self && c != null ) {
 							c.add( self );
 						}
@@ -472,5 +517,27 @@ class CodeTemplates {
 	@Retention(RetentionPolicy.RUNTIME)
 	@interface MappedBy {
 
+	}
+
+	// mapping to get private field from superclass by calling the enhanced reader, for use when field is not visible
+	static class GetterMapping implements Advice.OffsetMapping {
+
+		private final FieldDescription persistentField;
+
+		GetterMapping(FieldDescription persistentField) {
+			this.persistentField = persistentField;
+		}
+
+		@Override public Target resolve(TypeDescription instrumentedType, MethodDescription instrumentedMethod, Assigner assigner, Advice.ArgumentHandler argumentHandler, Sort sort) {
+			MethodDescription.Token signature = new MethodDescription.Token( EnhancerConstants.PERSISTENT_FIELD_READER_PREFIX + persistentField.getName(), Opcodes.ACC_PUBLIC, persistentField.getType() );
+			MethodDescription method = new MethodDescription.Latent( instrumentedType.getSuperClass().asErasure(), signature );
+
+			return new Target.AbstractReadOnlyAdapter() {
+				@Override
+				public StackManipulation resolveRead() {
+					return new StackManipulation.Compound( MethodVariableAccess.loadThis(), MethodInvocation.invoke( method ).special( method.getDeclaringType().asErasure() ) );
+				}
+			};
+		}
 	}
 }

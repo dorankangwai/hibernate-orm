@@ -88,7 +88,7 @@ public class Identifier implements Comparable<Identifier> {
 	 *
 	 * @param name
 	 *
-	 * @return
+	 * @return {@code true} if the given identifier text is considered quoted; {@code false} otherwise.
 	 */
 	public static boolean isQuoted(String name) {
 		return ( name.startsWith( "`" ) && name.endsWith( "`" ) )
@@ -114,6 +114,16 @@ public class Identifier implements Comparable<Identifier> {
 	}
 
 	/**
+	 * Constructs an unquoted identifier instance.
+	 *
+	 * @param text The identifier text.
+	 */
+	protected Identifier(String text) {
+		this.text = text;
+		this.isQuoted = false;
+	}
+
+	/**
 	 * Get the identifiers name (text)
 	 *
 	 * @return The name
@@ -123,7 +133,7 @@ public class Identifier implements Comparable<Identifier> {
 	}
 
 	/**
-	 * Is this a quoted identifier>
+	 * Is this a quoted identifier?
 	 *
 	 * @return True if this is a quote identifier; false otherwise.
 	 */

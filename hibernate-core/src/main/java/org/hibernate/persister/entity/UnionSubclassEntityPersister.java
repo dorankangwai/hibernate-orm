@@ -20,8 +20,8 @@ import org.hibernate.HibernateException;
 import org.hibernate.LockMode;
 import org.hibernate.MappingException;
 import org.hibernate.boot.model.relational.Database;
-import org.hibernate.cache.spi.access.EntityRegionAccessStrategy;
-import org.hibernate.cache.spi.access.NaturalIdRegionAccessStrategy;
+import org.hibernate.cache.spi.access.EntityDataAccess;
+import org.hibernate.cache.spi.access.NaturalIdDataAccess;
 import org.hibernate.cfg.Settings;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment;
@@ -46,7 +46,7 @@ import org.hibernate.type.Type;
 
 /**
  * Implementation of the "table-per-concrete-class" or "roll-down" mapping
- * strategy for an entity and its inheritence hierarchy.
+ * strategy for an entity and its inheritance hierarchy.
  *
  * @author Gavin King
  */
@@ -70,8 +70,8 @@ public class UnionSubclassEntityPersister extends AbstractEntityPersister {
 
 	public UnionSubclassEntityPersister(
 			final PersistentClass persistentClass,
-			final EntityRegionAccessStrategy cacheAccessStrategy,
-			final NaturalIdRegionAccessStrategy naturalIdRegionAccessStrategy,
+			final EntityDataAccess cacheAccessStrategy,
+			final NaturalIdDataAccess naturalIdRegionAccessStrategy,
 			final PersisterCreationContext creationContext) throws HibernateException {
 
 		super( persistentClass, cacheAccessStrategy, naturalIdRegionAccessStrategy, creationContext );
@@ -287,19 +287,19 @@ public class UnionSubclassEntityPersister extends AbstractEntityPersister {
 		return null;
 	}
 
-	protected String getTableName(int j) {
+	public String getTableName(int j) {
 		return tableName;
 	}
 
-	protected String[] getKeyColumns(int j) {
+	public String[] getKeyColumns(int j) {
 		return getIdentifierColumnNames();
 	}
 
-	protected boolean isTableCascadeDeleteEnabled(int j) {
+	public boolean isTableCascadeDeleteEnabled(int j) {
 		return false;
 	}
 
-	protected boolean isPropertyOfTable(int property, int j) {
+	public boolean isPropertyOfTable(int property, int j) {
 		return true;
 	}
 
@@ -310,7 +310,7 @@ public class UnionSubclassEntityPersister extends AbstractEntityPersister {
 	}
 
 	@Override
-	public String filterFragment(String name) {
+	protected String filterFragment(String name) {
 		return hasWhere()
 				? " and " + getSQLWhereString( name )
 				: "";
@@ -466,6 +466,7 @@ public class UnionSubclassEntityPersister extends AbstractEntityPersister {
 		return true;
 	}
 
+	@Override
 	public String getPropertyTableName(String propertyName) {
 		//TODO: check this....
 		return getTableName();
@@ -483,4 +484,5 @@ public class UnionSubclassEntityPersister extends AbstractEntityPersister {
 	public FilterAliasGenerator getFilterAliasGenerator(String rootAlias) {
 		return new StaticFilterAliasGenerator( rootAlias );
 	}
+
 }

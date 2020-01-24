@@ -25,12 +25,12 @@ public class DirtyCollectionSearchVisitor extends AbstractVisitor {
 	private boolean dirty;
 	private boolean[] propertyVersionability;
 
-	DirtyCollectionSearchVisitor(EventSource session, boolean[] propertyVersionability) {
+	public DirtyCollectionSearchVisitor(EventSource session, boolean[] propertyVersionability) {
 		super( session );
 		this.propertyVersionability = propertyVersionability;
 	}
 
-	boolean wasDirtyCollectionFound() {
+	public boolean wasDirtyCollectionFound() {
 		return dirty;
 	}
 
@@ -39,7 +39,7 @@ public class DirtyCollectionSearchVisitor extends AbstractVisitor {
 			final SessionImplementor session = getSession();
 			final PersistentCollection persistentCollection;
 			if ( type.isArrayType() ) {
-				persistentCollection = session.getPersistenceContext().getCollectionHolder( collection );
+				persistentCollection = session.getPersistenceContextInternal().getCollectionHolder( collection );
 				// if no array holder we found an unwrappered array (this can't occur,
 				// because we now always call wrap() before getting to here)
 				// return (ah==null) ? true : searchForDirtyCollections(ah, type);

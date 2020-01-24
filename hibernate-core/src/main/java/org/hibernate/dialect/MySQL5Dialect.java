@@ -9,6 +9,7 @@ package org.hibernate.dialect;
 import java.sql.SQLException;
 import java.sql.Types;
 
+import org.hibernate.dialect.hint.IndexQueryHintHandler;
 import org.hibernate.exception.spi.TemplatedViolatedConstraintNameExtracter;
 import org.hibernate.exception.spi.ViolatedConstraintNameExtracter;
 import org.hibernate.internal.util.JdbcExceptionHelper;
@@ -44,7 +45,7 @@ public class MySQL5Dialect extends MySQLDialect {
 
 		@Override
 		protected String doExtractConstraintName(SQLException sqle) throws NumberFormatException {
-			final int sqlState = Integer.valueOf( JdbcExceptionHelper.extractSqlState( sqle ) ).intValue();
+			final int sqlState = Integer.parseInt( JdbcExceptionHelper.extractSqlState( sqle ) );
 			switch ( sqlState ) {
 			case 23000:
 				return extractUsingTemplate( " for key '", "'", sqle.getMessage() );
@@ -54,4 +55,14 @@ public class MySQL5Dialect extends MySQLDialect {
 		}
 	};
 
+
+	@Override
+	public String getQueryHintString(String query, String hints) {
+		return IndexQueryHintHandler.INSTANCE.addQueryHints( query, hints );
+	}
+
+	@Override
+	public boolean supportsUnionAll() {
+		return true;
+	}
 }

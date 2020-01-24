@@ -15,7 +15,9 @@ import javax.persistence.AccessType;
 import javax.persistence.AttributeConverter;
 
 import org.hibernate.AnnotationException;
+import org.hibernate.boot.AttributeConverterInfo;
 import org.hibernate.boot.registry.classloading.spi.ClassLoadingException;
+import org.hibernate.boot.spi.BootstrapContext;
 import org.hibernate.boot.spi.ClassLoaderAccess;
 import org.hibernate.cfg.AttributeConverterDefinition;
 import org.hibernate.internal.CoreLogging;
@@ -37,24 +39,32 @@ public class XMLContext implements Serializable {
 	private final ClassLoaderAccess classLoaderAccess;
 
 	private Default globalDefaults;
-	private Map<String, Element> classOverriding = new HashMap<String, Element>();
-	private Map<String, Default> defaultsOverriding = new HashMap<String, Default>();
-	private List<Element> defaultElements = new ArrayList<Element>();
-	private List<String> defaultEntityListeners = new ArrayList<String>();
+	private Map<String, Element> classOverriding = new HashMap<>();
+	private Map<String, Default> defaultsOverriding = new HashMap<>();
+	private List<Element> defaultElements = new ArrayList<>();
+	private List<String> defaultEntityListeners = new ArrayList<>();
 	private boolean hasContext = false;
 
+	/**
+	 * @deprecated Use {@link XMLContext#XMLContext(BootstrapContext)} instead.
+	 */
+	@Deprecated
 	public XMLContext(ClassLoaderAccess classLoaderAccess) {
 		this.classLoaderAccess = classLoaderAccess;
 	}
 
+	public XMLContext(BootstrapContext bootstrapContext) {
+		this.classLoaderAccess = bootstrapContext.getClassLoaderAccess();
+	}
+
 	/**
 	 * @param doc The xml document to add
-	 * @return Add a xml document to this context and return the list of added class names.
+	 * @return Add an xml document to this context and return the list of added class names.
 	 */
 	@SuppressWarnings( "unchecked" )
 	public List<String> addDocument(Document doc) {
 		hasContext = true;
-		List<String> addedClasses = new ArrayList<String>();
+		List<String> addedClasses = new ArrayList<>();
 		Element root = doc.getRootElement();
 		//global defaults
 		Element metadata = root.element( "persistence-unit-metadata" );
@@ -98,7 +108,7 @@ public class XMLContext implements Serializable {
 		unitElement = root.element( "access" );
 		setAccess( unitElement, entityMappingDefault );
 		defaultElements.add( root );
-		
+
 		setLocalAttributeConverterDefinitions( root.elements( "converter" ) );
 
 		List<Element> entities = root.elements( "entity" );
@@ -157,7 +167,7 @@ public class XMLContext implements Serializable {
 	}
 
 	private List<String> addEntityListenerClasses(Element element, String packageName, List<String> addedClasses) {
-		List<String> localAddedClasses = new ArrayList<String>();
+		List<String> localAddedClasses = new ArrayList<>();
 		Element listeners = element.element( "entity-listeners" );
 		if ( listeners != null ) {
 			@SuppressWarnings( "unchecked" )
@@ -180,7 +190,7 @@ public class XMLContext implements Serializable {
 		addedClasses.addAll( localAddedClasses );
 		return localAddedClasses;
 	}
-	
+
 	@SuppressWarnings("unchecked")
 	private void setLocalAttributeConverterDefinitions(List<Element> converterElements) {
 		for ( Element converterElement : converterElements ) {
@@ -192,7 +202,7 @@ public class XMLContext implements Serializable {
 				final Class<? extends AttributeConverter> attributeConverterClass = classLoaderAccess.classForName(
 						className
 				);
-				attributeConverterDefinitions.add(
+				attributeConverterInfoList.add(
 						new AttributeConverterDefinition( attributeConverterClass.newInstance(), autoApply )
 				);
 			}
@@ -238,13 +248,13 @@ public class XMLContext implements Serializable {
 		return hasContext;
 	}
 
-	private List<AttributeConverterDefinition> attributeConverterDefinitions = new ArrayList<AttributeConverterDefinition>();
+	private List<AttributeConverterInfo> attributeConverterInfoList = new ArrayList<>();
 
 	public void applyDiscoveredAttributeConverters(AttributeConverterDefinitionCollector collector) {
-		for ( AttributeConverterDefinition definition : attributeConverterDefinitions ) {
-			collector.addAttributeConverter( definition );
+		for ( AttributeConverterInfo info : attributeConverterInfoList ) {
+			collector.addAttributeConverter( info );
 		}
-		attributeConverterDefinitions.clear();
+		attributeConverterInfoList.clear();
 	}
 
 	public static class Default implements Serializable {

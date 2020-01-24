@@ -29,6 +29,8 @@ public final class NamedQueryLoader implements UniqueEntityLoader {
 	private final String queryName;
 	private final EntityPersister persister;
 
+	private final int position;
+
 	/**
 	 * Constructs the NamedQueryLoader
 	 *
@@ -39,19 +41,32 @@ public final class NamedQueryLoader implements UniqueEntityLoader {
 		super();
 		this.queryName = queryName;
 		this.persister = persister;
+		this.position = persister.getFactory().getSessionFactoryOptions().jdbcStyleParamsZeroBased()
+				? 0
+				: 1;
 	}
 
 	@Override
 	public Object load(Serializable id, Object optionalObject, SharedSessionContractImplementor session, LockOptions lockOptions) {
+		return load( id, optionalObject, session, (Boolean) null );
+	}
+
+	@Override
+	public Object load(Serializable id, Object optionalObject, SharedSessionContractImplementor session, LockOptions lockOptions, Boolean readOnly) {
 		if ( lockOptions != null ) {
 			LOG.debug( "Ignoring lock-options passed to named query loader" );
 		}
-		return load( id, optionalObject, session );
+		return load( id, optionalObject, session, readOnly );
 	}
 
 	@Override
 	public Object load(Serializable id, Object optionalObject, SharedSessionContractImplementor session) {
-		LOG.debugf( "Loading entity: %s using named query: %s", persister.getEntityName(), queryName );
+		return load( id, optionalObject, session, (Boolean) null );
+	}
+
+	@Override
+	public Object load(Serializable id, Object optionalObject, SharedSessionContractImplementor session, Boolean readOnly) {
+		LOG.debugf("Loading entity: %s using named query: %s", persister.getEntityName(), queryName);
 
 		// IMPL NOTE: essentially we perform the named query (which loads the entity into the PC), and then
 		// do an internal lookup of the entity from the PC.
@@ -61,18 +76,21 @@ public final class NamedQueryLoader implements UniqueEntityLoader {
 			query.setParameter( query.getNamedParameters()[0], id, persister.getIdentifierType() );
 		}
 		else {
-			query.setParameter( 0, id, persister.getIdentifierType() );
+			query.setParameter( position, id, persister.getIdentifierType() );
 		}
 
 		query.setOptionalId( id );
 		query.setOptionalEntityName( persister.getEntityName() );
 		query.setOptionalObject( optionalObject );
 		query.setFlushMode( FlushMode.MANUAL );
+		if ( readOnly != null ) {
+			query.setReadOnly( readOnly );
+		}
 		query.list();
 
 		// now look up the object we are really interested in!
 		// (this lets us correctly handle proxies and multi-row or multi-column queries)
-		return session.getPersistenceContext().getEntity( session.generateEntityKey( id, persister ) );
+		return session.getPersistenceContextInternal().getEntity( session.generateEntityKey( id, persister ) );
 
 	}
 }

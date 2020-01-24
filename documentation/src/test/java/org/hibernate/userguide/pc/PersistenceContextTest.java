@@ -42,8 +42,6 @@ import static org.junit.Assert.assertTrue;
  */
 public class PersistenceContextTest extends BaseEntityManagerFunctionalTestCase {
 
-	private static final Logger log = Logger.getLogger( PersistenceContextTest.class );
-
 	@Override
 	protected Class<?>[] getAnnotatedClasses() {
 		return new Class<?>[] {
@@ -225,7 +223,7 @@ public class PersistenceContextTest extends BaseEntityManagerFunctionalTestCase 
 			//tag::pc-managed-state-native-example[]
 			Person person = session.byId( Person.class ).load( personId );
 			person.setName("John Doe");
-			entityManager.flush();
+			session.flush();
 			//end::pc-managed-state-native-example[]
 		} );
 
@@ -420,6 +418,10 @@ public class PersistenceContextTest extends BaseEntityManagerFunctionalTestCase 
 		@ManyToOne
 		private Person author;
 
+		//Getters and setters are omitted for brevity
+
+	//end::pc-find-by-natural-id-entity-example[]
+
 		public Long getId() {
 			return id;
 		}
@@ -451,6 +453,7 @@ public class PersistenceContextTest extends BaseEntityManagerFunctionalTestCase 
 		public void setIsbn(String isbn) {
 			this.isbn = isbn;
 		}
+	//tag::pc-find-by-natural-id-entity-example[]
 	}
 	//end::pc-find-by-natural-id-entity-example[]
 }

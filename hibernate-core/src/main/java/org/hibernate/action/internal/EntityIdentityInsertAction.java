@@ -11,8 +11,10 @@ import java.io.Serializable;
 import org.hibernate.AssertionFailure;
 import org.hibernate.HibernateException;
 import org.hibernate.engine.spi.EntityKey;
+import org.hibernate.engine.spi.PersistenceContext;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.event.service.spi.EventListenerGroup;
+import org.hibernate.event.spi.EventSource;
 import org.hibernate.event.spi.EventType;
 import org.hibernate.event.spi.PostCommitInsertEventListener;
 import org.hibernate.event.spi.PostInsertEvent;
@@ -20,13 +22,14 @@ import org.hibernate.event.spi.PostInsertEventListener;
 import org.hibernate.event.spi.PreInsertEvent;
 import org.hibernate.event.spi.PreInsertEventListener;
 import org.hibernate.persister.entity.EntityPersister;
+import org.hibernate.stat.spi.StatisticsImplementor;
 
 /**
  * The action for performing entity insertions when entity is using IDENTITY column identifier generation
  *
  * @see EntityInsertAction
  */
-public final class EntityIdentityInsertAction extends AbstractEntityInsertAction  {
+public class EntityIdentityInsertAction extends AbstractEntityInsertAction  {
 
 	private final boolean isDelayed;
 	private final EntityKey delayedEntityKey;
@@ -72,12 +75,12 @@ public final class EntityIdentityInsertAction extends AbstractEntityInsertAction
 		final SharedSessionContractImplementor session = getSession();
 		final Object instance = getInstance();
 
-		final boolean veto = preInsert();
+		setVeto( preInsert() );
 
 		// Don't need to lock the cache here, since if someone
 		// else inserted the same pk first, the insert would fail
 
-		if ( !veto ) {
+		if ( !isVeto() ) {
 			generatedId = persister.insert( getState(), instance, session );
 			if ( persister.hasInsertGeneratedProperties() ) {
 				persister.processInsertGeneratedProperties( generatedId, instance, getState(), session );
@@ -85,9 +88,10 @@ public final class EntityIdentityInsertAction extends AbstractEntityInsertAction
 			//need to do that here rather than in the save event listener to let
 			//the post insert events to have a id-filled entity when IDENTITY is used (EJB3)
 			persister.setIdentifier( instance, generatedId, session );
-			session.getPersistenceContext().registerInsertedKey( getPersister(), generatedId );
+			final PersistenceContext persistenceContext = session.getPersistenceContextInternal();
+			persistenceContext.registerInsertedKey( getPersister(), generatedId );
 			entityKey = session.generateEntityKey( generatedId, persister );
-			session.getPersistenceContext().checkUniqueness( entityKey, getInstance() );
+			persistenceContext.checkUniqueness( entityKey, getInstance() );
 		}
 
 
@@ -101,8 +105,9 @@ public final class EntityIdentityInsertAction extends AbstractEntityInsertAction
 
 		postInsert();
 
-		if ( session.getFactory().getStatistics().isStatisticsEnabled() && !veto ) {
-			session.getFactory().getStatisticsImplementor().insertEntity( getPersister().getEntityName() );
+		final StatisticsImplementor statistics = session.getFactory().getStatistics();
+		if ( statistics.isStatisticsEnabled() && !isVeto() ) {
+			statistics.insertEntity( getPersister().getEntityName() );
 		}
 
 		markExecuted();
@@ -118,7 +123,7 @@ public final class EntityIdentityInsertAction extends AbstractEntityInsertAction
 	protected boolean hasPostCommitEventListeners() {
 		final EventListenerGroup<PostInsertEventListener> group = listenerGroup( EventType.POST_COMMIT_INSERT );
 		for ( PostInsertEventListener listener : group.listeners() ) {
-			if ( listener.requiresPostCommitHanding( getPersister() ) ) {
+			if ( listener.requiresPostCommitHandling( getPersister() ) ) {
 				return true;
 			}
 		}
@@ -136,9 +141,10 @@ public final class EntityIdentityInsertAction extends AbstractEntityInsertAction
 		postCommitInsert( success );
 	}
 
-	private void postInsert() {
+	protected void postInsert() {
+		final EventSource eventSource = eventSource();
 		if ( isDelayed ) {
-			getSession().getPersistenceContext().replaceDelayedEntityIdentityInsertKeys( delayedEntityKey, generatedId );
+			eventSource.getPersistenceContextInternal().replaceDelayedEntityIdentityInsertKeys( delayedEntityKey, generatedId );
 		}
 
 		final EventListenerGroup<PostInsertEventListener> listenerGroup = listenerGroup( EventType.POST_INSERT );
@@ -150,14 +156,14 @@ public final class EntityIdentityInsertAction extends AbstractEntityInsertAction
 				generatedId,
 				getState(),
 				getPersister(),
-				eventSource()
+				eventSource
 		);
 		for ( PostInsertEventListener listener : listenerGroup.listeners() ) {
 			listener.onPostInsert( event );
 		}
 	}
 
-	private void postCommitInsert(boolean success) {
+	protected void postCommitInsert(boolean success) {
 		final EventListenerGroup<PostInsertEventListener> listenerGroup = listenerGroup( EventType.POST_COMMIT_INSERT );
 		if ( listenerGroup.isEmpty() ) {
 			return;
@@ -185,7 +191,7 @@ public final class EntityIdentityInsertAction extends AbstractEntityInsertAction
 		}
 	}
 
-	private boolean preInsert() {
+	protected boolean preInsert() {
 		final EventListenerGroup<PreInsertEventListener> listenerGroup = listenerGroup( EventType.PRE_INSERT );
 		if ( listenerGroup.isEmpty() ) {
 			// NO_VETO
@@ -206,6 +212,10 @@ public final class EntityIdentityInsertAction extends AbstractEntityInsertAction
 	 */
 	public final Serializable getGeneratedId() {
 		return generatedId;
+	}
+
+	protected void setGeneratedId(Serializable generatedId) {
+		this.generatedId = generatedId;
 	}
 
 	/**
@@ -231,11 +241,15 @@ public final class EntityIdentityInsertAction extends AbstractEntityInsertAction
 		return entityKey != null ? entityKey : delayedEntityKey;
 	}
 
+	protected void setEntityKey(EntityKey entityKey) {
+		this.entityKey = entityKey;
+	}
+
 	private static DelayedPostInsertIdentifier generateDelayedPostInsertIdentifier() {
 		return new DelayedPostInsertIdentifier();
 	}
 
-	private EntityKey generateDelayedEntityKey() {
+	protected EntityKey generateDelayedEntityKey() {
 		if ( !isDelayed ) {
 			throw new AssertionFailure( "cannot request delayed entity-key for early-insert post-insert-id generation" );
 		}

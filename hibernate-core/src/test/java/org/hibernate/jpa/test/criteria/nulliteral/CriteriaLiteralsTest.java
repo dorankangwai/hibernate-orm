@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import javax.persistence.CascadeType;
 import javax.persistence.Entity;
+import javax.persistence.EntityManager;
 import javax.persistence.GeneratedValue;
 import javax.persistence.Id;
 import javax.persistence.ManyToOne;
@@ -28,7 +29,7 @@ import org.hibernate.hql.internal.ast.QuerySyntaxException;
 import org.hibernate.jpa.test.BaseEntityManagerFunctionalTestCase;
 
 import org.hibernate.testing.RequiresDialect;
-import org.hibernate.test.util.jdbc.PreparedStatementSpyConnectionProvider;
+import org.hibernate.testing.jdbc.SQLStatementInterceptor;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -43,29 +44,12 @@ import static org.junit.Assert.fail;
  */
 @RequiresDialect(H2Dialect.class)
 public class CriteriaLiteralsTest extends BaseEntityManagerFunctionalTestCase {
-	
-	private PreparedStatementSpyConnectionProvider connectionProvider;
+
+	private SQLStatementInterceptor sqlStatementInterceptor;
 
 	@Override
-	protected Map getConfig() {
-		Map config = super.getConfig();
-		config.put(
-				org.hibernate.cfg.AvailableSettings.CONNECTION_PROVIDER,
-				connectionProvider
-		);
-		return config;
-	}
-
-	@Override
-	public void buildEntityManagerFactory() throws Exception {
-		connectionProvider = new PreparedStatementSpyConnectionProvider();
-		super.buildEntityManagerFactory();
-	}
-
-	@Override
-	public void releaseResources() {
-		super.releaseResources();
-		connectionProvider.stop();
+	protected void addConfigOptions(Map options) {
+		sqlStatementInterceptor = new SQLStatementInterceptor( options );
 	}
 
 	@Override
@@ -127,18 +111,61 @@ public class CriteriaLiteralsTest extends BaseEntityManagerFunctionalTestCase {
 					entity.get( "name" )
 			);
 
-			connectionProvider.clear();
+			sqlStatementInterceptor.clear();
 			List<Tuple> tuples = entityManager.createQuery( query )
 					.getResultList();
 
 			assertEquals(
 					1,
-					connectionProvider.getPreparedStatements().size()
+					sqlStatementInterceptor.getSqlQueries().size()
 			);
-			assertNotNull( connectionProvider.getPreparedStatement(
-					"select 'abc' as col_0_0_, criteriali0_.name as col_1_0_ from Book criteriali0_ where criteriali0_.name=?" ) );
+			sqlStatementInterceptor.assertExecuted("select 'abc' as col_0_0_, criteriali0_.name as col_1_0_ from Book criteriali0_ where criteriali0_.name=?");
 			assertTrue( tuples.isEmpty() );
 		} );
+	}
+
+	@Test
+	public void testNumericLiteralsInWhereClause() throws Exception {
+		doInJPA( this::entityManagerFactory, entityManager -> {
+			testNumericLiterals(
+				entityManager,
+			 	"select 'abc' as col_0_0_, criteriali0_.name as col_1_0_ from Book criteriali0_ where criteriali0_.id=1"
+			);
+		} );
+	}
+
+	@Test
+	public void testNumericLiteralsInWhereClauseUsingBindParameters() throws Exception {
+		doInJPA( this::entityManagerFactory, entityManager -> {
+			testNumericLiterals(
+				entityManager,
+			 	"select 'abc' as col_0_0_, criteriali0_.name as col_1_0_ from Book criteriali0_ where criteriali0_.id=1"
+			);
+		} );
+	}
+
+	private void testNumericLiterals(EntityManager entityManager, String expectedSQL) {
+		final CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+
+		final CriteriaQuery<Tuple> query = cb.createQuery( Tuple.class );
+
+		final Root<Book> entity = query.from( Book.class );
+		query.where( cb.equal(
+				entity.get( "id" ),
+				cb.literal( 1 )
+		) );
+
+		query.multiselect(
+				cb.literal( "abc" ),
+				entity.get( "name" )
+		);
+
+		sqlStatementInterceptor.clear();
+
+		List<Tuple> tuples = entityManager.createQuery( query ).getResultList();
+		assertEquals( 1, tuples.size() );
+
+		sqlStatementInterceptor.assertExecuted( expectedSQL );
 	}
 
 	@Test
@@ -155,15 +182,13 @@ public class CriteriaLiteralsTest extends BaseEntityManagerFunctionalTestCase {
 			), cb.equal( authors.index(), 0 ) )
 					.select( authors.get( "name" ) );
 
-			connectionProvider.clear();
+			sqlStatementInterceptor.clear();
 			entityManager.createQuery( query ).getResultList();
 			assertEquals(
 					1,
-					connectionProvider.getPreparedStatements().size()
+					sqlStatementInterceptor.getSqlQueries().size()
 			);
-			assertNotNull( connectionProvider.getPreparedStatement(
-					"select authors1_.name as col_0_0_ from Book criteriali0_ inner join Author authors1_ on criteriali0_.id=authors1_.book_id where criteriali0_.name=? and authors1_.index_id=0" )
-			);
+			sqlStatementInterceptor.assertExecuted( "select authors1_.name as col_0_0_ from Book criteriali0_ inner join Author authors1_ on criteriali0_.id=authors1_.book_id where criteriali0_.name=? and authors1_.index_id=0" );
 		} );
 	}
 

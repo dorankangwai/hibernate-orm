@@ -21,6 +21,8 @@ import javax.persistence.SequenceGenerator;
 
 import org.hibernate.cfg.Environment;
 
+import org.hibernate.testing.DialectChecks;
+import org.hibernate.testing.RequiresDialectFeature;
 import org.hibernate.testing.TestForIssue;
 import org.hibernate.testing.junit4.BaseNonConfigCoreFunctionalTestCase;
 import org.hibernate.test.util.jdbc.PreparedStatementSpyConnectionProvider;
@@ -34,10 +36,11 @@ import static org.mockito.Mockito.verify;
  * @author Vlad Mihalcea
  */
 @TestForIssue(jiraKey = "HHH-9864")
+@RequiresDialectFeature(DialectChecks.SupportsJdbcDriverProxying.class)
 public class InsertOrderingWithBidirectionalMapsIdOneToOne
 		extends BaseNonConfigCoreFunctionalTestCase {
 
-	private PreparedStatementSpyConnectionProvider connectionProvider = new PreparedStatementSpyConnectionProvider();
+	private PreparedStatementSpyConnectionProvider connectionProvider = new PreparedStatementSpyConnectionProvider( true, false );
 
 	@Override
 	protected Class[] getAnnotatedClasses() {
@@ -82,9 +85,11 @@ public class InsertOrderingWithBidirectionalMapsIdOneToOne
 		PreparedStatement addressPreparedStatement = connectionProvider.getPreparedStatement(
 				"insert into Address (ID) values (?)" );
 		verify( addressPreparedStatement, times( 2 ) ).addBatch();
+		verify( addressPreparedStatement, times( 1 ) ).executeBatch();
 		PreparedStatement personPreparedStatement = connectionProvider.getPreparedStatement(
 				"insert into Person (address_ID) values (?)" );
 		verify( personPreparedStatement, times( 2 ) ).addBatch();
+		verify( personPreparedStatement, times( 1 ) ).executeBatch();
 	}
 
 	@Entity(name = "Address")

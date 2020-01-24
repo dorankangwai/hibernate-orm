@@ -101,11 +101,11 @@ include::{sourcedir}/CollectionImmutabilityTest.java[tags=collection-immutabilit
 
 [source, bash, indent=0]
 ----
-include::{extrasdir}/collection-immutability-update-example.log[]
+include::{extrasdir}/collection-immutability-update-example.log.txt[]
 ----
 ====
 
 [TIP]
 ====
-While immutable entity changes are simply discarded, modifying an immutable collection end up in a `HibernateException` being thrown.
+While immutable entity changes are simply discarded, modifying an immutable collection will end up in a `HibernateException` being thrown.
 ====

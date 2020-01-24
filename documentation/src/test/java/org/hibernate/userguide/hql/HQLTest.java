@@ -43,6 +43,7 @@ import org.hibernate.userguide.model.PhoneType;
 import org.hibernate.userguide.model.WireTransferPayment;
 
 import org.hibernate.testing.DialectChecks;
+import org.hibernate.testing.FailureExpected;
 import org.hibernate.testing.RequiresDialect;
 import org.hibernate.testing.RequiresDialectFeature;
 import org.hibernate.testing.SkipForDialect;
@@ -416,6 +417,7 @@ public class HQLTest extends BaseEntityManagerFunctionalTestCase {
 			.getResultList();
 			//end::hql-collection-valued-associations[]
 			assertEquals(1, phones.size());
+			assertEquals( "123-456-7890", phones.get( 0 ).getNumber() );
 		});
 
 	}
@@ -430,7 +432,7 @@ public class HQLTest extends BaseEntityManagerFunctionalTestCase {
 
 			// alternate syntax
 			List<Phone> phones = session.createQuery(
-				"select pr " +
+				"select ph " +
 				"from Person pr, " +
 				"in (pr.phones) ph, " +
 				"in (ph.calls) c " +
@@ -441,6 +443,7 @@ public class HQLTest extends BaseEntityManagerFunctionalTestCase {
 			.list();
 			//end::hql-collection-valued-associations[]
 			assertEquals(1, phones.size());
+			assertEquals( "123-456-7890", phones.get( 0 ).getNumber() );
 		});
 	}
 
@@ -581,6 +584,19 @@ public class HQLTest extends BaseEntityManagerFunctionalTestCase {
 				"get_person_by_name", Person.class
 			);
 			//end::jpql-api-named-query-example[]
+		});
+	}
+
+	@Test
+	public void test_jpql_api_hibernate_named_query_example() {
+		doInJPA( this::entityManagerFactory, entityManager -> {
+			//tag::jpql-api-hibernate-named-query-example[]
+			Phone phone = entityManager
+				.createNamedQuery( "get_phone_by_number", Phone.class )
+				.setParameter( "number", "123-456-7890" )
+				.getSingleResult();
+			//end::jpql-api-hibernate-named-query-example[]
+			assertNotNull( phone );
 		});
 	}
 
@@ -761,7 +777,7 @@ public class HQLTest extends BaseEntityManagerFunctionalTestCase {
 		});
 	}
 
-	@Test
+	@Test(expected = IllegalArgumentException.class)
 	public void test_hql_api_positional_parameter_example() {
 		doInJPA( this::entityManagerFactory, entityManager -> {
 			Date timestamp = new Date(  );
@@ -770,8 +786,8 @@ public class HQLTest extends BaseEntityManagerFunctionalTestCase {
 			org.hibernate.query.Query query = session.createQuery(
 				"select p " +
 				"from Person p " +
-				"where p.name like ? " )
-			.setParameter( 0, "J%" );
+				"where p.name like ?" )
+			.setParameter( 1, "J%" );
 			//end::hql-api-positional-parameter-example[]
 		});
 	}
@@ -1720,6 +1736,28 @@ public class HQLTest extends BaseEntityManagerFunctionalTestCase {
 			.getResultList();
 			//end::hql-searched-case-expressions-example[]
 			assertEquals(3, nickNames.size());
+		});
+	}
+
+	@Test
+	public void test_case_arithmetic_expressions_example() {
+		doInJPA( this::entityManagerFactory, entityManager -> {
+			//tag::hql-case-arithmetic-expressions-example[]
+			List<Long> values = entityManager.createQuery(
+				"select " +
+				"	case when p.nickName is null " +
+				"		 then (p.id * 1000) " +
+				"		 else p.id " +
+				"	end " +
+				"from Person p " +
+				"order by p.id", Long.class)
+			.getResultList();
+
+			assertEquals(3, values.size());
+			assertEquals( 1L, (long) values.get( 0 ) );
+			assertEquals( 2000, (long) values.get( 1 ) );
+			assertEquals( 3000, (long) values.get( 2 ) );
+			//end::hql-case-arithmetic-expressions-example[]
 		});
 	}
 

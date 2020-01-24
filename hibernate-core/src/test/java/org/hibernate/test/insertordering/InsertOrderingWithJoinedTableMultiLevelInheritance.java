@@ -29,6 +29,8 @@ import javax.persistence.Table;
 import org.hibernate.annotations.BatchSize;
 import org.hibernate.cfg.Environment;
 
+import org.hibernate.testing.DialectChecks;
+import org.hibernate.testing.RequiresDialectFeature;
 import org.hibernate.testing.TestForIssue;
 import org.hibernate.testing.junit4.BaseNonConfigCoreFunctionalTestCase;
 import org.hibernate.test.util.jdbc.PreparedStatementSpyConnectionProvider;
@@ -41,10 +43,11 @@ import static org.junit.Assert.assertEquals;
  * @author Vlad Mihalcea
  */
 @TestForIssue(jiraKey = "HHH-9864")
+@RequiresDialectFeature(DialectChecks.SupportsJdbcDriverProxying.class)
 public class InsertOrderingWithJoinedTableMultiLevelInheritance
 		extends BaseNonConfigCoreFunctionalTestCase {
 
-	private PreparedStatementSpyConnectionProvider connectionProvider = new PreparedStatementSpyConnectionProvider();
+	private PreparedStatementSpyConnectionProvider connectionProvider = new PreparedStatementSpyConnectionProvider( false, false );
 
 	@Override
 	protected Class[] getAnnotatedClasses() {
@@ -133,8 +136,8 @@ public class InsertOrderingWithJoinedTableMultiLevelInheritance
 	public static class Office {
 		@Id
 		@Column(name = "ID", nullable = false)
-		@SequenceGenerator(name = "ID", sequenceName = "ADDRESS_SEQ")
-		@GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "ID")
+		@SequenceGenerator(name = "ID_2", sequenceName = "ADDRESS_SEQ")
+		@GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "ID_2")
 		private Long id;
 	}
 
@@ -145,8 +148,8 @@ public class InsertOrderingWithJoinedTableMultiLevelInheritance
 	public static class Person {
 		@Id
 		@Column(name = "ID", nullable = false)
-		@SequenceGenerator(name = "ID", sequenceName = "PERSON_SEQ")
-		@GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "ID")
+		@SequenceGenerator(name = "ID_3", sequenceName = "PERSON_SEQ")
+		@GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "ID_3")
 		private Long id;
 
 	}

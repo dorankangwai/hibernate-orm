@@ -225,8 +225,8 @@ tokens
 		return #( [NAMED_PARAM, nameNode.getText()] );
 	}
 
-	protected AST generatePositionalParameter(AST inputNode) throws SemanticException {
-		return #( [PARAM, "?"] );
+	protected AST generatePositionalParameter(AST delimiterNode, AST numberNode) throws SemanticException {
+		return #( [PARAM, numberNode.getText()] );
 	}
 
 	protected void lookupAlias(AST ident) throws SemanticException { }
@@ -234,6 +234,10 @@ tokens
 	protected void setAlias(AST selectExpr, AST ident) { }
 
 	protected boolean isOrderExpressionResultVariableRef(AST ident) throws SemanticException {
+		return false;
+	}
+
+	protected boolean isGroupExpressionResultVariableRef(AST ident) throws SemanticException {
 		return false;
 	}
 
@@ -394,7 +398,7 @@ resultVariableRef!
 	;
 
 groupClause
-	: #(GROUP { handleClauseStart( GROUP ); } (expr [ null ])+ ( #(HAVING logicalExpr) )? ) {
+	: #(GROUP { handleClauseStart( GROUP ); } ({ isGroupExpressionResultVariableRef( _t ) }? resultVariableRef | expr [ null ])+ ( #(HAVING logicalExpr) )? ) {
 		handleClauseEnd();
 	}
 	;
@@ -452,6 +456,7 @@ constructor
 aggregateExpr
 	: expr [ null ] //p:propertyRef { resolve(#p); }
 	| collectionFunction
+	| selectStatement
 	;
 
 // Establishes the list of aliases being used by this query.
@@ -504,7 +509,7 @@ joinElement! {
 	}
 	;
 
-// Returns an node type integer that represents the join type
+// Returns a node type integer that represents the join type
 // tokens.
 joinType returns [int j] {
 	j = INNER;
@@ -804,24 +809,13 @@ mapPropertyExpression
 
 parameter!
 	: #(c:COLON a:identifier) {
-			// Create a NAMED_PARAM node instead of (COLON IDENT).
-			#parameter = generateNamedParameter( c, a );
-//			#parameter = #([NAMED_PARAM,a.getText()]);
-//			namedParameter(#parameter);
-		}
-	| #(p:PARAM (n:NUM_INT)?) {
-			if ( n != null ) {
-				// An ejb3-style "positional parameter", which we handle internally as a named-param
-				#parameter = generateNamedParameter( p, n );
-//				#parameter = #([NAMED_PARAM,n.getText()]);
-//				namedParameter(#parameter);
-			}
-			else {
-				#parameter = generatePositionalParameter( p );
-//				#parameter = #([PARAM,"?"]);
-//				positionalParameter(#parameter);
-			}
-		}
+		// Create a NAMED_PARAM node instead of (COLON IDENT) - semantics ftw!
+		#parameter = generateNamedParameter( c, a );
+	}
+	| #(p:PARAM (n:NUM_INT)? ) {
+		// Create a (POSITIONAL_)PARAM node instead of (PARAM NUM_INT) - semantics ftw!
+		#parameter = generatePositionalParameter( p, n );
+	}
 	;
 
 numericInteger

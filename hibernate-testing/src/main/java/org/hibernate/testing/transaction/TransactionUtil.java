@@ -6,10 +6,11 @@
  */
 package org.hibernate.testing.transaction;
 
+import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Map;
-import java.util.Properties;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -19,15 +20,22 @@ import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.EntityTransaction;
 
-import org.hibernate.HibernateException;
 import org.hibernate.Session;
 import org.hibernate.SessionBuilder;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
+import org.hibernate.boot.registry.StandardServiceRegistry;
+import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
+import org.hibernate.dialect.AbstractHANADialect;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.dialect.H2Dialect;
 import org.hibernate.dialect.MySQLDialect;
 import org.hibernate.dialect.PostgreSQL81Dialect;
+import org.hibernate.dialect.SQLServerDialect;
+import org.hibernate.dialect.SybaseASE15Dialect;
+import org.hibernate.engine.jdbc.spi.JdbcServices;
+
+import org.junit.Assert;
 
 import org.jboss.logging.Logger;
 
@@ -37,6 +45,28 @@ import org.jboss.logging.Logger;
 public class TransactionUtil {
 
 	private static final Logger log = Logger.getLogger( TransactionUtil.class );
+
+	public static void doInHibernate(Supplier<SessionFactory> factorySupplier, Consumer<Session> function) {
+		final SessionFactory sessionFactory = factorySupplier.get();
+		Assert.assertNotNull( "SessionFactory is null in test!", sessionFactory );
+		//Make sure any error is propagated
+		try ( Session session = sessionFactory.openSession() ) {
+			final Transaction txn = session.getTransaction();
+			txn.begin();
+			try {
+				function.accept( session );
+			}
+			catch (Throwable e) {
+				try {
+					txn.rollback();
+				}
+				finally {
+					throw e;
+				}
+			}
+			txn.commit();
+		}
+	}
 
 	/**
 	 * Hibernate transaction function
@@ -348,6 +378,81 @@ public class TransactionUtil {
 	}
 
 	/**
+	 * Execute function in a Hibernate transaction without return value and for a given tenant
+	 *
+	 * @param factorySupplier SessionFactory supplier
+	 * @param tenant tenant
+	 * @param function function
+	 */
+	public static void doInHibernate(
+			Supplier<SessionFactory> factorySupplier,
+			String tenant,
+			Consumer<Session> function) {
+		Session session = null;
+		Transaction txn = null;
+		try {
+			session = factorySupplier.get()
+					.withOptions()
+					.tenantIdentifier( tenant )
+					.openSession();
+			txn = session.getTransaction();
+			txn.begin();
+			function.accept( session );
+			txn.commit();
+		}
+		catch (Throwable e) {
+			if ( txn != null ) {
+				txn.rollback();
+			}
+			throw e;
+		}
+		finally {
+			if ( session != null ) {
+				session.close();
+			}
+		}
+	}
+
+	/**
+	 * Execute function in a Hibernate transaction for a given tenant and return a value
+	 *
+	 * @param factorySupplier SessionFactory supplier
+	 * @param tenant tenant
+	 * @param function function
+	 *
+	 * @return result
+	 */
+	public static <R> R doInHibernate(
+			Supplier<SessionFactory> factorySupplier,
+			String tenant,
+			Function<Session, R> function) {
+		Session session = null;
+		Transaction txn = null;
+		try {
+			session = factorySupplier.get()
+					.withOptions()
+					.tenantIdentifier( tenant )
+					.openSession();
+			txn = session.getTransaction();
+			txn.begin();
+			R returnValue = function.apply( session );
+			txn.commit();
+			return returnValue;
+		}
+		catch (Throwable e) {
+			if ( txn != null ) {
+				txn.rollback();
+			}
+			throw e;
+		}
+		finally {
+			if ( session != null ) {
+				session.close();
+			}
+		}
+	}
+
+	/**
 	 * Execute function in a Hibernate transaction
 	 *
 	 * @param sessionBuilderSupplier SessionFactory supplier
@@ -470,7 +575,7 @@ public class TransactionUtil {
 
 			}
 			else if( Dialect.getDialect() instanceof MySQLDialect ) {
-				try (PreparedStatement st = connection.prepareStatement("SET GLOBAL innodb_lock_wait_timeout = ?")) {
+				try (PreparedStatement st = connection.prepareStatement("SET SESSION innodb_lock_wait_timeout = ?")) {
 					st.setLong( 1, TimeUnit.MILLISECONDS.toSeconds( millis ) );
 					st.execute();
 				}
@@ -481,15 +586,110 @@ public class TransactionUtil {
 					st.execute();
 				}
 			}
+			else if( Dialect.getDialect() instanceof SQLServerDialect ) {
+				try (Statement st = connection.createStatement()) {
+					//Prepared Statements fail for SET commands
+					st.execute(String.format( "SET LOCK_TIMEOUT %d", millis / 10));
+				}
+			}
+			else if( Dialect.getDialect() instanceof AbstractHANADialect ) {
+				try (Statement st = connection.createStatement()) {
+					//Prepared Statements fail for SET commands
+					st.execute(String.format( "SET TRANSACTION LOCK WAIT TIMEOUT %d", millis ));
+				}
+			}
+			else if( Dialect.getDialect() instanceof SybaseASE15Dialect) {
+				try (Statement st = connection.createStatement()) {
+					//Prepared Statements fail for SET commands
+					st.execute(String.format( "SET LOCK WAIT %d", millis/1000 ));
+				}
+			}
 			else {
 				try {
 					connection.setNetworkTimeout( Executors.newSingleThreadExecutor(), (int) millis );
 				}
 				catch (Throwable ignore) {
-					ignore.fillInStackTrace();
 				}
 			}
 		} );
 	}
 
+	/**
+	 * Use the supplied settings for building a new {@link org.hibernate.service.ServiceRegistry} and
+	 * create a new JDBC {@link Connection} in auto-commit mode.
+	 *
+	 * A new JDBC {@link Statement} is created and passed to the supplied callback.
+	 *
+	 * @param consumer {@link Statement} callback to execute statements in auto-commit mode
+	 * @param settings Settings to build a new {@link org.hibernate.service.ServiceRegistry}
+	 */
+	public static void doInAutoCommit(Consumer<Statement> consumer, Map settings) {
+		StandardServiceRegistryBuilder ssrb = new StandardServiceRegistryBuilder();
+		if ( settings != null ) {
+			ssrb.applySettings( settings );
+		}
+		StandardServiceRegistry ssr = ssrb.build();
+
+		try {
+			try (Connection connection = ssr.getService( JdbcServices.class )
+					.getBootstrapJdbcConnectionAccess()
+					.obtainConnection();
+				Statement statement = connection.createStatement()) {
+				connection.setAutoCommit( true );
+				consumer.accept( statement );
+			}
+			catch (SQLException e) {
+				log.debug( e.getMessage() );
+			}
+		}
+		finally {
+			StandardServiceRegistryBuilder.destroy( ssr );
+		}
+	}
+
+	/**
+	 * Use the default settings for building a new {@link org.hibernate.service.ServiceRegistry} and
+	 * create a new JDBC {@link Connection} in auto-commit mode.
+	 *
+	 * A new JDBC {@link Statement} is created and passed to the supplied callback.
+	 *
+	 * @param consumer {@link Statement} callback to execute statements in auto-commit mode
+	 */
+	public static void doInAutoCommit(Consumer<Statement> consumer) {
+		doInAutoCommit( consumer, null );
+	}
+
+	/**
+	 * Use the supplied settings for building a new {@link org.hibernate.service.ServiceRegistry} and
+	 * create a new JDBC {@link Connection} in auto-commit mode.
+	 *
+	 * The supplied statements will be executed using the previously created connection
+	 *
+	 * @param settings Settings to build a new {@link org.hibernate.service.ServiceRegistry}
+	 * @param statements statements to be executed in auto-commit mode
+	 */
+	public static void doInAutoCommit(Map settings, String... statements) {
+		doInAutoCommit( s -> {
+			for ( String statement : statements ) {
+				try {
+					s.executeUpdate( statement );
+				}
+				catch (SQLException e) {
+					log.debugf( e, "Statement [%s] execution failed!", statement );
+				}
+			}
+		}, settings );
+	}
+
+	/**
+	 * Use the default settings for building a new {@link org.hibernate.service.ServiceRegistry} and
+	 * create a new JDBC {@link Connection} in auto-commit mode.
+	 *
+	 * The supplied statements will be executed using the previously created connection
+	 *
+	 * @param statements statements to be executed in auto-commit mode
+	 */
+	public static void doInAutoCommit(String... statements) {
+		doInAutoCommit( null, statements );
+	}
 }

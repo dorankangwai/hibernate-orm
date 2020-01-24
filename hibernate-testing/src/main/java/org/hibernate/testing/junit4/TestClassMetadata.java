@@ -13,6 +13,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 
 import org.hibernate.internal.SessionFactoryRegistry;
+import org.hibernate.internal.build.AllowPrintStacktrace;
+import org.hibernate.internal.build.AllowSysOut;
 
 import org.hibernate.testing.AfterClassOnce;
 import org.hibernate.testing.BeforeClassOnce;
@@ -27,6 +29,7 @@ import org.jboss.logging.Logger;
  * @author Steve Ebersole
  */
 public class TestClassMetadata {
+
 	private static final Logger log = Logger.getLogger( TestClassMetadata.class );
 
 	private static final Object[] NO_ARGS = new Object[0];
@@ -182,6 +185,8 @@ public class TestClassMetadata {
 		}
 	}
 
+	@AllowSysOut
+	@AllowPrintStacktrace
 	private void invokeCallback(Method callback, Object target) {
 		try {
 			performCallbackInvocation( callback, target );

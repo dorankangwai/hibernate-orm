@@ -10,7 +10,7 @@ import java.io.Serializable;
 
 import org.hibernate.AssertionFailure;
 import org.hibernate.HibernateException;
-import org.hibernate.cache.spi.access.EntityRegionAccessStrategy;
+import org.hibernate.cache.spi.access.EntityDataAccess;
 import org.hibernate.cache.spi.entry.CacheEntry;
 import org.hibernate.engine.internal.Versioning;
 import org.hibernate.engine.spi.EntityEntry;
@@ -27,13 +27,15 @@ import org.hibernate.event.spi.PostInsertEventListener;
 import org.hibernate.event.spi.PreInsertEvent;
 import org.hibernate.event.spi.PreInsertEventListener;
 import org.hibernate.persister.entity.EntityPersister;
+import org.hibernate.stat.internal.StatsHelper;
+import org.hibernate.stat.spi.StatisticsImplementor;
 
 /**
  * The action for performing an entity insertion, for entities not defined to use IDENTITY generation.
  *
  * @see EntityIdentityInsertAction
  */
-public final class EntityInsertAction extends AbstractEntityInsertAction {
+public class EntityInsertAction extends AbstractEntityInsertAction {
 	private Object version;
 	private Object cacheEntry;
 
@@ -58,6 +60,22 @@ public final class EntityInsertAction extends AbstractEntityInsertAction {
 			SharedSessionContractImplementor session) {
 		super( id, state, instance, isVersionIncrementDisabled, persister, session );
 		this.version = version;
+	}
+
+	public Object getVersion() {
+		return version;
+	}
+
+	public void setVersion(Object version) {
+		this.version = version;
+	}
+
+	protected Object getCacheEntry() {
+		return cacheEntry;
+	}
+
+	protected void setCacheEntry(Object cacheEntry) {
+		this.cacheEntry = cacheEntry;
 	}
 
 	@Override
@@ -87,7 +105,7 @@ public final class EntityInsertAction extends AbstractEntityInsertAction {
 		if ( !veto ) {
 			
 			persister.insert( id, getState(), instance, session );
-			PersistenceContext persistenceContext = session.getPersistenceContext();
+			PersistenceContext persistenceContext = session.getPersistenceContextInternal();
 			final EntityEntry entry = persistenceContext.getEntry( instance );
 			if ( entry == null ) {
 				throw new AssertionFailure( "possible non-threadsafe access to session" );
@@ -108,6 +126,7 @@ public final class EntityInsertAction extends AbstractEntityInsertAction {
 
 		final SessionFactoryImplementor factory = session.getFactory();
 
+		final StatisticsImplementor statistics = factory.getStatistics();
 		if ( isCachePutEnabled( persister, session ) ) {
 			final CacheEntry ce = persister.buildCacheEntry(
 					instance,
@@ -116,13 +135,16 @@ public final class EntityInsertAction extends AbstractEntityInsertAction {
 					session
 			);
 			cacheEntry = persister.getCacheEntryStructure().structure( ce );
-			final EntityRegionAccessStrategy cache = persister.getCacheAccessStrategy();
+			final EntityDataAccess cache = persister.getCacheAccessStrategy();
 			final Object ck = cache.generateCacheKey( id, persister, factory, session.getTenantIdentifier() );
 
 			final boolean put = cacheInsert( persister, ck );
 
-			if ( put && factory.getStatistics().isStatisticsEnabled() ) {
-				factory.getStatistics().secondLevelCachePut( cache.getRegion().getName() );
+			if ( put && statistics.isStatisticsEnabled() ) {
+				statistics.entityCachePut(
+						StatsHelper.INSTANCE.getRootEntityRole( persister ),
+						cache.getRegion().getName()
+				);
 			}
 		}
 
@@ -130,14 +152,14 @@ public final class EntityInsertAction extends AbstractEntityInsertAction {
 
 		postInsert();
 
-		if ( factory.getStatistics().isStatisticsEnabled() && !veto ) {
-			factory.getStatistics().insertEntity( getPersister().getEntityName() );
+		if ( statistics.isStatisticsEnabled() && !veto ) {
+			statistics.insertEntity( getPersister().getEntityName() );
 		}
 
 		markExecuted();
 	}
 
-	private boolean cacheInsert(EntityPersister persister, Object ck) {
+	protected boolean cacheInsert(EntityPersister persister, Object ck) {
 		SharedSessionContractImplementor session = getSession();
 		try {
 			session.getEventListenerManager().cachePutStart();
@@ -148,7 +170,7 @@ public final class EntityInsertAction extends AbstractEntityInsertAction {
 		}
 	}
 
-	private void postInsert() {
+	protected void postInsert() {
 		final EventListenerGroup<PostInsertEventListener> listenerGroup = listenerGroup( EventType.POST_INSERT );
 		if ( listenerGroup.isEmpty() ) {
 			return;
@@ -165,7 +187,7 @@ public final class EntityInsertAction extends AbstractEntityInsertAction {
 		}
 	}
 
-	private void postCommitInsert(boolean success) {
+	protected void postCommitInsert(boolean success) {
 		final EventListenerGroup<PostInsertEventListener> listenerGroup = listenerGroup( EventType.POST_COMMIT_INSERT );
 		if ( listenerGroup.isEmpty() ) {
 			return;
@@ -193,7 +215,7 @@ public final class EntityInsertAction extends AbstractEntityInsertAction {
 		}
 	}
 
-	private boolean preInsert() {
+	protected boolean preInsert() {
 		boolean veto = false;
 
 		final EventListenerGroup<PreInsertEventListener> listenerGroup = listenerGroup( EventType.PRE_INSERT );
@@ -211,20 +233,23 @@ public final class EntityInsertAction extends AbstractEntityInsertAction {
 	public void doAfterTransactionCompletion(boolean success, SharedSessionContractImplementor session) throws HibernateException {
 		final EntityPersister persister = getPersister();
 		if ( success && isCachePutEnabled( persister, getSession() ) ) {
-			final EntityRegionAccessStrategy cache = persister.getCacheAccessStrategy();
-			SessionFactoryImplementor sessionFactoryImplementor = session.getFactory();
-			final Object ck = cache.generateCacheKey( getId(), persister, sessionFactoryImplementor, session.getTenantIdentifier() );
+			final EntityDataAccess cache = persister.getCacheAccessStrategy();
+			SessionFactoryImplementor factory = session.getFactory();
+			final Object ck = cache.generateCacheKey( getId(), persister, factory, session.getTenantIdentifier() );
 			final boolean put = cacheAfterInsert( cache, ck );
 
-			if ( put && sessionFactoryImplementor.getStatistics().isStatisticsEnabled() ) {
-				sessionFactoryImplementor.getStatisticsImplementor()
-						.secondLevelCachePut( cache.getRegion().getName() );
+			final StatisticsImplementor statistics = factory.getStatistics();
+			if ( put && statistics.isStatisticsEnabled() ) {
+				statistics.entityCachePut(
+						StatsHelper.INSTANCE.getRootEntityRole( persister ),
+						cache.getRegion().getName()
+				);
 			}
 		}
 		postCommitInsert( success );
 	}
 
-	private boolean cacheAfterInsert(EntityRegionAccessStrategy cache, Object ck) {
+	protected boolean cacheAfterInsert(EntityDataAccess cache, Object ck) {
 		SharedSessionContractImplementor session = getSession();
 		final SessionEventListenerManager eventListenerManager = session.getEventListenerManager();
 		try {
@@ -240,16 +265,16 @@ public final class EntityInsertAction extends AbstractEntityInsertAction {
 	protected boolean hasPostCommitEventListeners() {
 		final EventListenerGroup<PostInsertEventListener> group = listenerGroup( EventType.POST_COMMIT_INSERT );
 		for ( PostInsertEventListener listener : group.listeners() ) {
-			if ( listener.requiresPostCommitHanding( getPersister() ) ) {
+			if ( listener.requiresPostCommitHandling( getPersister() ) ) {
 				return true;
 			}
 		}
 
 		return false;
 	}
-	
-	private boolean isCachePutEnabled(EntityPersister persister, SharedSessionContractImplementor session) {
-		return persister.hasCache()
+
+	protected boolean isCachePutEnabled(EntityPersister persister, SharedSessionContractImplementor session) {
+		return persister.canWriteToCache()
 				&& !persister.isCacheInvalidationRequired()
 				&& session.getCacheMode().isPutEnabled();
 	}

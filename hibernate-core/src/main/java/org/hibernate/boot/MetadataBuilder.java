@@ -95,24 +95,10 @@ public interface MetadataBuilder {
 	MetadataBuilder applyPhysicalNamingStrategy(PhysicalNamingStrategy namingStrategy);
 
 	/**
-	 * Defines the Hibernate Commons Annotations ReflectionManager to use
-	 *
-	 * @param reflectionManager The ReflectionManager to use.
-	 *
-	 * @return {@code this}, for method chaining
-	 *
-	 * @deprecated Deprecated (with no replacement) to indicate that this will go away as
-	 * we migrate away from Hibernate Commons Annotations to Jandex for annotation handling
-	 * and XMl->annotation merging.
-	 */
-	@Deprecated
-	MetadataBuilder applyReflectionManager(ReflectionManager reflectionManager);
-
-	/**
 	 * Specify the second-level cache mode to be used.  This is the cache mode in terms of whether or
 	 * not to cache.
 	 * <p/>
-	 * Its default is defined by the {@coce javax.persistence.sharedCache.mode} setting if using
+	 * Its default is defined by the {@code javax.persistence.sharedCache.mode} setting if using
 	 * property-based configuration.
 	 *
 	 * @param cacheMode The cache mode.
@@ -215,7 +201,7 @@ public interface MetadataBuilder {
 	 * setting if using property-based configuration.
 	 *
 	 *
-	 * @param enable {@code true} to enable; {@code false} to disable;don't call for
+	 * @param enable {@code true} to enable; {@code false} to disable; don't call for
 	 * default.
 	 *
 	 * @return {@code this}, for method chaining
@@ -396,12 +382,23 @@ public interface MetadataBuilder {
 	MetadataBuilder applyAuxiliaryDatabaseObject(AuxiliaryDatabaseObject auxiliaryDatabaseObject);
 
 	/**
-	 * Adds an AttributeConverter by a AttributeConverterDefinition
+	 * Adds an AttributeConverter by an AttributeConverterDefinition
 	 *
 	 * @param definition The definition
 	 *
 	 * @return {@code this} for method chaining
+	 *
+	 * @deprecated (since 5.3) AttributeConverterDefinition forces early
+	 * access to the AttributeConverter instance which precludes the
+	 * possibility to resolve the converter from CDI, etc.  Instead use
+	 * one of:
+	 *
+	 * 		* {@link #applyAttributeConverter(Class)}
+	 * 		* {@link #applyAttributeConverter(Class, boolean)}
+	 * 		* {@link #applyAttributeConverter(AttributeConverter)}
+	 * 		* {@link #applyAttributeConverter(AttributeConverter, boolean)}
 	 */
+	@Deprecated
 	MetadataBuilder applyAttributeConverter(AttributeConverterDefinition definition);
 
 	/**
@@ -410,8 +407,6 @@ public interface MetadataBuilder {
 	 * @param attributeConverterClass The AttributeConverter class.
 	 *
 	 * @return {@code this} for method chaining
-	 *
-	 * @see org.hibernate.cfg.AttributeConverterDefinition#from(Class)
 	 */
 	MetadataBuilder applyAttributeConverter(Class<? extends AttributeConverter> attributeConverterClass);
 

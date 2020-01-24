@@ -31,23 +31,14 @@ public class ResultSetReturnImpl implements ResultSetReturn {
 	private final SqlStatementLogger sqlStatementLogger;
 	private final SqlExceptionHelper sqlExceptionHelper;
 
-	private boolean isJdbc4 = true;
-
 	/**
 	 * Constructs a ResultSetReturnImpl
 	 *
 	 * @param jdbcCoordinator The JdbcCoordinator
 	 */
-	public ResultSetReturnImpl(JdbcCoordinator jdbcCoordinator) {
+	public ResultSetReturnImpl(JdbcCoordinator jdbcCoordinator, JdbcServices jdbcServices) {
 		this.jdbcCoordinator = jdbcCoordinator;
-
-		final JdbcServices jdbcServices = jdbcCoordinator.getJdbcSessionOwner()
-				.getJdbcSessionContext()
-				.getServiceRegistry()
-				.getService( JdbcServices.class );
-
 		this.dialect = jdbcServices.getDialect();
-
 		this.sqlStatementLogger = jdbcServices.getSqlStatementLogger();
 		this.sqlExceptionHelper = jdbcServices.getSqlExceptionHelper();
 	}
@@ -55,16 +46,11 @@ public class ResultSetReturnImpl implements ResultSetReturn {
 	@Override
 	public ResultSet extract(PreparedStatement statement) {
 		// IMPL NOTE : SQL logged by caller
+		long executeStart = 0;
+		if ( this.sqlStatementLogger.getLogSlowQuery() > 0 ) {
+			executeStart = System.currentTimeMillis();
+		}
 		try {
-			if ( isTypeOf( statement, CallableStatement.class ) ) {
-				// We actually need to extract from Callable statement.  Although
-				// this seems needless, Oracle can return an
-				// OracleCallableStatementWrapper that finds its way to this method,
-				// rather than extract(CallableStatement).  See HHH-8022.
-				final CallableStatement callableStatement = statement.unwrap( CallableStatement.class );
-				return extract( callableStatement );
-			}
-
 			final ResultSet rs;
 			try {
 				jdbcExecuteStatementStart();
@@ -72,6 +58,7 @@ public class ResultSetReturnImpl implements ResultSetReturn {
 			}
 			finally {
 				jdbcExecuteStatementEnd();
+				sqlStatementLogger.logSlowQuery( statement, executeStart );
 			}
 			postExtract( rs, statement );
 			return rs;
@@ -89,28 +76,13 @@ public class ResultSetReturnImpl implements ResultSetReturn {
 		jdbcCoordinator.getJdbcSessionOwner().getJdbcSessionContext().getObserver().jdbcExecuteStatementStart();
 	}
 
-	private boolean isTypeOf(final Statement statement, final Class<? extends Statement> type) {
-		if ( isJdbc4 ) {
-			try {
-				// This is "more correct" than #isInstance, but not always supported.
-				return statement.isWrapperFor( type );
-			}
-			catch (SQLException e) {
-				// No operation
-			}
-			catch (Throwable e) {
-				// No operation. Note that this catches more than just SQLException to
-				// cover edge cases where a driver might throw an UnsupportedOperationException, AbstractMethodError,
-				// etc.  If so, skip permanently.
-				isJdbc4 = false;
-			}
-		}
-		return type.isInstance( statement );
-	}
-
 	@Override
 	public ResultSet extract(CallableStatement callableStatement) {
 		// IMPL NOTE : SQL logged by caller
+		long executeStart = 0;
+		if ( this.sqlStatementLogger.getLogSlowQuery() > 0 ) {
+			executeStart = System.currentTimeMillis();
+		}
 		try {
 			final ResultSet rs;
 			try {
@@ -119,6 +91,7 @@ public class ResultSetReturnImpl implements ResultSetReturn {
 			}
 			finally {
 				jdbcExecuteStatementEnd();
+				sqlStatementLogger.logSlowQuery( callableStatement, executeStart );
 			}
 			postExtract( rs, callableStatement );
 			return rs;
@@ -131,6 +104,10 @@ public class ResultSetReturnImpl implements ResultSetReturn {
 	@Override
 	public ResultSet extract(Statement statement, String sql) {
 		sqlStatementLogger.logStatement( sql );
+		long executeStart = 0;
+		if ( this.sqlStatementLogger.getLogSlowQuery() > 0 ) {
+			executeStart = System.currentTimeMillis();
+		}
 		try {
 			final ResultSet rs;
 			try {
@@ -139,6 +116,7 @@ public class ResultSetReturnImpl implements ResultSetReturn {
 			}
 			finally {
 				jdbcExecuteStatementEnd();
+				sqlStatementLogger.logSlowQuery( sql, executeStart );
 			}
 			postExtract( rs, statement );
 			return rs;
@@ -151,6 +129,10 @@ public class ResultSetReturnImpl implements ResultSetReturn {
 	@Override
 	public ResultSet execute(PreparedStatement statement) {
 		// sql logged by StatementPreparerImpl
+		long executeStart = 0;
+		if ( this.sqlStatementLogger.getLogSlowQuery() > 0 ) {
+			executeStart = System.currentTimeMillis();
+		}
 		try {
 			final ResultSet rs;
 			try {
@@ -164,6 +146,7 @@ public class ResultSetReturnImpl implements ResultSetReturn {
 			}
 			finally {
 				jdbcExecuteStatementEnd();
+				sqlStatementLogger.logSlowQuery( statement, executeStart );
 			}
 			postExtract( rs, statement );
 			return rs;
@@ -176,6 +159,10 @@ public class ResultSetReturnImpl implements ResultSetReturn {
 	@Override
 	public ResultSet execute(Statement statement, String sql) {
 		sqlStatementLogger.logStatement( sql );
+		long executeStart = 0;
+		if ( this.sqlStatementLogger.getLogSlowQuery() > 0 ) {
+			executeStart = System.currentTimeMillis();
+		}
 		try {
 			final ResultSet rs;
 			try {
@@ -189,6 +176,7 @@ public class ResultSetReturnImpl implements ResultSetReturn {
 			}
 			finally {
 				jdbcExecuteStatementEnd();
+				sqlStatementLogger.logSlowQuery( statement, executeStart );
 			}
 			postExtract( rs, statement );
 			return rs;
@@ -200,6 +188,10 @@ public class ResultSetReturnImpl implements ResultSetReturn {
 
 	@Override
 	public int executeUpdate(PreparedStatement statement) {
+		long executeStart = 0;
+		if ( this.sqlStatementLogger.getLogSlowQuery() > 0 ) {
+			executeStart = System.currentTimeMillis();
+		}
 		try {
 			jdbcExecuteStatementStart();
 			return statement.executeUpdate();
@@ -209,12 +201,17 @@ public class ResultSetReturnImpl implements ResultSetReturn {
 		}
 		finally {
 			jdbcExecuteStatementEnd();
+			sqlStatementLogger.logSlowQuery( statement, executeStart );
 		}
 	}
 
 	@Override
 	public int executeUpdate(Statement statement, String sql) {
 		sqlStatementLogger.logStatement( sql );
+		long executeStart = 0;
+		if ( this.sqlStatementLogger.getLogSlowQuery() > 0 ) {
+			executeStart = System.currentTimeMillis();
+		}
 		try {
 			jdbcExecuteStatementStart();
 			return statement.executeUpdate( sql );
@@ -224,6 +221,7 @@ public class ResultSetReturnImpl implements ResultSetReturn {
 		}
 		finally {
 			jdbcExecuteStatementEnd();
+			sqlStatementLogger.logSlowQuery( statement, executeStart );
 		}
 	}
 

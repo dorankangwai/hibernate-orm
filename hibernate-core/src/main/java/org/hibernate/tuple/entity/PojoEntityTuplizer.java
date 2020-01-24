@@ -16,7 +16,8 @@ import org.hibernate.EntityMode;
 import org.hibernate.EntityNameResolver;
 import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
-import org.hibernate.bytecode.enhance.spi.interceptor.LazyAttributeLoadingInterceptor;
+import org.hibernate.bytecode.enhance.spi.interceptor.BytecodeLazyAttributeInterceptor;
+import org.hibernate.bytecode.enhance.spi.interceptor.EnhancementAsProxyLazinessInterceptor;
 import org.hibernate.bytecode.spi.ReflectionOptimizer;
 import org.hibernate.cfg.Environment;
 import org.hibernate.classic.Lifecycle;
@@ -91,7 +92,7 @@ public class PojoEntityTuplizer extends AbstractEntityTuplizer {
 	protected ProxyFactory buildProxyFactory(PersistentClass persistentClass, Getter idGetter, Setter idSetter) {
 		// determine the id getter and setter methods from the proxy interface (if any)
 		// determine all interfaces needed by the resulting proxy
-		
+
 		/*
 		 * We need to preserve the order of the interfaces they were put into the set, since javassist will choose the
 		 * first one's class-loader to construct the proxy class with. This is also the reason why HibernateProxy.class
@@ -268,22 +269,14 @@ public class PojoEntityTuplizer extends AbstractEntityTuplizer {
 
 	@Override
 	public void afterInitialize(Object entity, SharedSessionContractImplementor session) {
-
-		// moving to multiple fetch groups, the idea of `lazyPropertiesAreUnfetched` really
-		// needs to become either:
-		// 		1) the names of all un-fetched fetch groups
-		//		2) the names of all fetched fetch groups
-		// probably (2) is best
-		//
-		// ultimately this comes from EntityEntry, although usage-search seems to show it is never updated there.
-		//
-		// also org.hibernate.persister.entity.AbstractEntityPersister.initializeLazyPropertiesFromDatastore()
-		//		needs to be re-worked
-
 		if ( entity instanceof PersistentAttributeInterceptable ) {
-			final LazyAttributeLoadingInterceptor interceptor = getEntityMetamodel().getBytecodeEnhancementMetadata().extractInterceptor( entity );
-			if ( interceptor == null ) {
-				getEntityMetamodel().getBytecodeEnhancementMetadata().injectInterceptor( entity, session );
+			final BytecodeLazyAttributeInterceptor interceptor = getEntityMetamodel().getBytecodeEnhancementMetadata().extractLazyInterceptor( entity );
+			if ( interceptor == null || interceptor instanceof EnhancementAsProxyLazinessInterceptor ) {
+				getEntityMetamodel().getBytecodeEnhancementMetadata().injectInterceptor(
+						entity,
+						getIdentifier( entity, session ),
+						session
+				);
 			}
 			else {
 				if ( interceptor.getLinkedSession() == null ) {
@@ -300,6 +293,10 @@ public class PojoEntityTuplizer extends AbstractEntityTuplizer {
 
 	@Override
 	public String determineConcreteSubclassEntityName(Object entityInstance, SessionFactoryImplementor factory) {
+		if ( entityInstance == null ) {
+			return getEntityName();
+		}
+
 		final Class concreteEntityClass = entityInstance.getClass();
 		if ( concreteEntityClass == getMappedClass() ) {
 			return getEntityName();

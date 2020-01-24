@@ -18,8 +18,8 @@ import java.util.Set;
 import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
 import org.hibernate.boot.model.relational.Database;
-import org.hibernate.cache.spi.access.EntityRegionAccessStrategy;
-import org.hibernate.cache.spi.access.NaturalIdRegionAccessStrategy;
+import org.hibernate.cache.spi.access.EntityDataAccess;
+import org.hibernate.cache.spi.access.NaturalIdDataAccess;
 import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment;
 import org.hibernate.engine.spi.ExecuteUpdateResultCheckStyle;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
@@ -47,8 +47,8 @@ import org.hibernate.type.Type;
 /**
  * The default implementation of the <tt>EntityPersister</tt> interface.
  * Implements the "table-per-class-hierarchy" or "roll-up" mapping strategy
- * for an entity class and its inheritence hierarchy.  This is implemented
- * as a single table holding all classes in the hierarchy with a discrimator
+ * for an entity class and its inheritance hierarchy.  This is implemented
+ * as a single table holding all classes in the hierarchy with a discriminator
  * column used to determine which concrete class is referenced.
  *
  * @author Gavin King
@@ -75,6 +75,7 @@ public class SingleTableEntityPersister extends AbstractEntityPersister {
 	private final boolean[] subclassTableSequentialSelect;
 	private final String[][] subclassTableKeyColumnClosure;
 	private final boolean[] isClassOrSuperclassTable;
+	private final boolean[] isClassOrSuperclassJoin;
 
 	// properties of this class, including inherited properties
 	private final int[] propertyTableNumbers;
@@ -117,8 +118,8 @@ public class SingleTableEntityPersister extends AbstractEntityPersister {
 
 	public SingleTableEntityPersister(
 			final PersistentClass persistentClass,
-			final EntityRegionAccessStrategy cacheAccessStrategy,
-			final NaturalIdRegionAccessStrategy naturalIdRegionAccessStrategy,
+			final EntityDataAccess cacheAccessStrategy,
+			final NaturalIdDataAccess naturalIdRegionAccessStrategy,
 			final PersisterCreationContext creationContext) throws HibernateException {
 
 		super( persistentClass, cacheAccessStrategy, naturalIdRegionAccessStrategy, creationContext );
@@ -227,6 +228,7 @@ public class SingleTableEntityPersister extends AbstractEntityPersister {
 		ArrayList<String> subclassTables = new ArrayList<String>();
 		ArrayList<String[]> joinKeyColumns = new ArrayList<String[]>();
 		ArrayList<Boolean> isConcretes = new ArrayList<Boolean>();
+		ArrayList<Boolean> isClassOrSuperclassJoins = new ArrayList<Boolean>();
 		ArrayList<Boolean> isDeferreds = new ArrayList<Boolean>();
 		ArrayList<Boolean> isInverses = new ArrayList<Boolean>();
 		ArrayList<Boolean> isNullables = new ArrayList<Boolean>();
@@ -234,6 +236,7 @@ public class SingleTableEntityPersister extends AbstractEntityPersister {
 		subclassTables.add( qualifiedTableNames[0] );
 		joinKeyColumns.add( getIdentifierColumnNames() );
 		isConcretes.add( Boolean.TRUE );
+		isClassOrSuperclassJoins.add( Boolean.TRUE );
 		isDeferreds.add( Boolean.FALSE );
 		isInverses.add( Boolean.FALSE );
 		isNullables.add( Boolean.FALSE );
@@ -241,21 +244,19 @@ public class SingleTableEntityPersister extends AbstractEntityPersister {
 		joinIter = persistentClass.getSubclassJoinClosureIterator();
 		while ( joinIter.hasNext() ) {
 			Join join = (Join) joinIter.next();
-			isConcretes.add( persistentClass.isClassOrSuperclassJoin( join ) );
-			isDeferreds.add( join.isSequentialSelect() );
+			isConcretes.add( persistentClass.isClassOrSuperclassTable( join.getTable() ) );
+			isClassOrSuperclassJoins.add( persistentClass.isClassOrSuperclassJoin( join ) );
 			isInverses.add( join.isInverse() );
 			isNullables.add( join.isOptional() );
 			isLazies.add( lazyAvailable && join.isLazy() );
-			if ( join.isSequentialSelect() && !persistentClass.isClassOrSuperclassJoin( join ) ) {
-				hasDeferred = true;
-			}
-			subclassTables.add(
-					join.getTable().getQualifiedName(
-							factory.getDialect(),
-							factory.getSettings().getDefaultCatalogName(),
-							factory.getSettings().getDefaultSchemaName()
-					)
-			);
+
+			boolean isDeferred = join.isSequentialSelect() && ! persistentClass.isClassOrSuperclassJoin( join ) ;
+			isDeferreds.add( isDeferred );
+			hasDeferred |= isDeferred;
+
+			String joinTableName = determineTableName( join.getTable(), jdbcEnvironment );
+			subclassTables.add( joinTableName );
+
 			Iterator iter = join.getKey().getColumnIterator();
 			String[] keyCols = new String[join.getKey().getColumnSpan()];
 			int i = 0;
@@ -271,6 +272,7 @@ public class SingleTableEntityPersister extends AbstractEntityPersister {
 		subclassTableIsLazyClosure = ArrayHelper.toBooleanArray( isLazies );
 		subclassTableKeyColumnClosure = ArrayHelper.to2DStringArray( joinKeyColumns );
 		isClassOrSuperclassTable = ArrayHelper.toBooleanArray( isConcretes );
+		isClassOrSuperclassJoin = ArrayHelper.toBooleanArray( isClassOrSuperclassJoins );
 		isInverseSubclassTable = ArrayHelper.toBooleanArray( isInverses );
 		isNullableSubclassTable = ArrayHelper.toBooleanArray( isNullables );
 		hasSequentialSelects = hasDeferred;
@@ -448,7 +450,7 @@ public class SingleTableEntityPersister extends AbstractEntityPersister {
 		}
 	}
 
-	protected boolean isInverseTable(int j) {
+	public boolean isInverseTable(int j) {
 		return isInverseTable[j];
 	}
 
@@ -468,11 +470,11 @@ public class SingleTableEntityPersister extends AbstractEntityPersister {
 		return discriminatorColumnReaderTemplate;
 	}
 
-	protected String getDiscriminatorAlias() {
+	public String getDiscriminatorAlias() {
 		return discriminatorAlias;
 	}
 
-	protected String getDiscriminatorFormulaTemplate() {
+	public String getDiscriminatorFormulaTemplate() {
 		return discriminatorFormulaTemplate;
 	}
 
@@ -523,19 +525,19 @@ public class SingleTableEntityPersister extends AbstractEntityPersister {
 		return discriminatorFormula;
 	}
 
-	protected String getTableName(int j) {
+	public String getTableName(int j) {
 		return qualifiedTableNames[j];
 	}
 
-	protected String[] getKeyColumns(int j) {
+	public String[] getKeyColumns(int j) {
 		return keyColumnNames[j];
 	}
 
-	protected boolean isTableCascadeDeleteEnabled(int j) {
+	public boolean isTableCascadeDeleteEnabled(int j) {
 		return cascadeDeleteEnabled[j];
 	}
 
-	protected boolean isPropertyOfTable(int property, int j) {
+	public boolean isPropertyOfTable(int property, int j) {
 		return propertyTableNumbers[property] == j;
 	}
 
@@ -550,7 +552,7 @@ public class SingleTableEntityPersister extends AbstractEntityPersister {
 	}
 
 	@Override
-	public String filterFragment(String alias) throws MappingException {
+	protected String filterFragment(String alias) throws MappingException {
 		String result = discriminatorFilterFragment( alias );
 		if ( hasWhere() ) {
 			result += " and " + getSQLWhereString( alias );
@@ -576,7 +578,7 @@ public class SingleTableEntityPersister extends AbstractEntityPersister {
 	}
 
 	@Override
-	public String filterFragment(String alias, Set<String> treatAsDeclarations) {
+	protected String filterFragment(String alias, Set<String> treatAsDeclarations) {
 		String result = discriminatorFilterFragment( alias, treatAsDeclarations );
 		if ( hasWhere() ) {
 			result += " and " + getSQLWhereString( alias );
@@ -800,11 +802,15 @@ public class SingleTableEntityPersister extends AbstractEntityPersister {
 		return isClassOrSuperclassTable[j];
 	}
 
+	protected boolean isClassOrSuperclassJoin(int j) {
+		return isClassOrSuperclassJoin[j];
+	}
+
 	protected boolean isSubclassTableLazy(int j) {
 		return subclassTableIsLazyClosure[j];
 	}
 
-	protected boolean isNullableTable(int j) {
+	public boolean isNullableTable(int j) {
 		return isNullableTable[j];
 	}
 
@@ -812,6 +818,7 @@ public class SingleTableEntityPersister extends AbstractEntityPersister {
 		return isNullableSubclassTable[j];
 	}
 
+	@Override
 	public String getPropertyTableName(String propertyName) {
 		Integer index = getEntityMetamodel().getPropertyIndexOrNull( propertyName );
 		if ( index == null ) {
@@ -831,6 +838,11 @@ public class SingleTableEntityPersister extends AbstractEntityPersister {
 				}
 			}
 		}
+	}
+
+	@Override
+	public boolean canOmitSuperclassTableJoin() {
+		return true;
 	}
 
 	public boolean isMultiTable() {

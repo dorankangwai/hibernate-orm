@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import org.hibernate.Filter;
 import org.hibernate.MappingException;
@@ -28,6 +29,7 @@ import org.hibernate.internal.util.collections.CollectionHelper;
 import org.hibernate.internal.util.config.ConfigurationHelper;
 import org.hibernate.query.ParameterMetadata;
 import org.hibernate.query.internal.ParameterMetadataImpl;
+import org.hibernate.stat.spi.StatisticsImplementor;
 
 /**
  * Acts as a cache for compiled query plans, as well as query-parameter metadata.
@@ -67,7 +69,7 @@ public class QueryPlanCache implements Serializable {
 	private final BoundedConcurrentHashMap<ParameterMetadataKey,ParameterMetadataImpl> parameterMetadataCache;
 
 
-	private NativeQueryInterpreter nativeQueryInterpreterService;
+	private NativeQueryInterpreter nativeQueryInterpreter;
 
 	/**
 	 * Constructs the QueryPlanCache to be used by the given SessionFactory
@@ -108,7 +110,7 @@ public class QueryPlanCache implements Serializable {
 				BoundedConcurrentHashMap.Eviction.LIRS
 		);
 
-		nativeQueryInterpreterService = factory.getServiceRegistry().getService( NativeQueryInterpreter.class );
+		nativeQueryInterpreter = factory.getServiceRegistry().getService( NativeQueryInterpreter.class );
 	}
 
 	/**
@@ -123,12 +125,7 @@ public class QueryPlanCache implements Serializable {
 	 */
 	public ParameterMetadata getSQLParameterMetadata(final String query, boolean isOrdinalParameterZeroBased)  {
 		final ParameterMetadataKey key = new ParameterMetadataKey( query, isOrdinalParameterZeroBased );
-		ParameterMetadataImpl value = parameterMetadataCache.get( key );
-		if ( value == null ) {
-			value = nativeQueryInterpreterService.getParameterMetadata( query );
-			parameterMetadataCache.putIfAbsent( key, value );
-		}
-		return value;
+		return parameterMetadataCache.computeIfAbsent( key, k -> nativeQueryInterpreter.getParameterMetadata( query ) );
 	}
 
 	/**
@@ -144,17 +141,33 @@ public class QueryPlanCache implements Serializable {
 	 * @throws MappingException Indicates a problem translating the query
 	 */
 	@SuppressWarnings("unchecked")
-	public HQLQueryPlan getHQLQueryPlan(String queryString, boolean shallow, Map<String,Filter> enabledFilters)
+	public HQLQueryPlan getHQLQueryPlan(String queryString, boolean shallow, Map<String, Filter> enabledFilters)
 			throws QueryException, MappingException {
 		final HQLQueryPlanKey key = new HQLQueryPlanKey( queryString, shallow, enabledFilters );
 		HQLQueryPlan value = (HQLQueryPlan) queryPlanCache.get( key );
+		final StatisticsImplementor statistics = factory.getStatistics();
+		boolean stats = statistics.isStatisticsEnabled();
+
 		if ( value == null ) {
+			final long startTime = ( stats ) ? System.nanoTime() : 0L;
+
 			LOG.tracev( "Unable to locate HQL query plan in cache; generating ({0})", queryString );
 			value = new HQLQueryPlan( queryString, shallow, enabledFilters, factory );
+
+			if ( stats ) {
+				final long endTime = System.nanoTime();
+				final long microseconds = TimeUnit.MICROSECONDS.convert( endTime - startTime, TimeUnit.NANOSECONDS );
+				statistics.queryCompiled( queryString, microseconds );
+			}
+
 			queryPlanCache.putIfAbsent( key, value );
 		}
 		else {
 			LOG.tracev( "Located HQL query plan in cache ({0})", queryString );
+
+			if ( stats ) {
+				statistics.queryPlanCacheHit( queryString );
+			}
 		}
 		return value;
 	}
@@ -210,7 +223,7 @@ public class QueryPlanCache implements Serializable {
 		NativeSQLQueryPlan value = (NativeSQLQueryPlan) queryPlanCache.get( spec );
 		if ( value == null ) {
 			LOG.tracev( "Unable to locate native-sql query plan in cache; generating ({0})", spec.getQueryString() );
-			value = nativeQueryInterpreterService.createQueryPlan( spec, factory );
+			value = nativeQueryInterpreter.createQueryPlan( spec, factory );
 			queryPlanCache.putIfAbsent( spec, value );
 		}
 		else {
@@ -220,12 +233,22 @@ public class QueryPlanCache implements Serializable {
 	}
 
 	/**
-	 * clean up QueryPlanCache when SessionFactory is closed
+	 * Clean up the caches when the SessionFactory is closed.
+	 * <p>
+	 * Note that depending on the cache strategy implementation chosen, clearing the cache might not reclaim all the
+	 * memory.
+	 * <p>
+	 * Typically, when using LIRS, clearing the cache only invalidates the entries but the outdated entries are kept in
+	 * memory until they are replaced by others. It is not considered a memory leak as the cache is bounded.
 	 */
 	public void cleanup() {
 		LOG.trace( "Cleaning QueryPlan Cache" );
 		queryPlanCache.clear();
 		parameterMetadataCache.clear();
+	}
+
+	public NativeQueryInterpreter getNativeQueryInterpreter() {
+		return nativeQueryInterpreter;
 	}
 
 	private static class ParameterMetadataKey implements Serializable {
@@ -322,15 +345,16 @@ public class QueryPlanCache implements Serializable {
 
 		private DynamicFilterKey(FilterImpl filter) {
 			this.filterName = filter.getName();
-			if ( filter.getParameters().isEmpty() ) {
+			final Map<String, ?> parameters = filter.getParameters();
+			if ( parameters.isEmpty() ) {
 				parameterMetadata = Collections.emptyMap();
 			}
 			else {
 				parameterMetadata = new HashMap<String,Integer>(
-						CollectionHelper.determineProperSizing( filter.getParameters() ),
+						CollectionHelper.determineProperSizing( parameters ),
 						CollectionHelper.LOAD_FACTOR
 				);
-				for ( Object o : filter.getParameters().entrySet() ) {
+				for ( Object o : parameters.entrySet() ) {
 					final Map.Entry entry = (Map.Entry) o;
 					final String key = (String) entry.getKey();
 					final Integer valueCount;
@@ -387,8 +411,7 @@ public class QueryPlanCache implements Serializable {
 				this.filterNames = Collections.emptySet();
 			}
 			else {
-				final Set<String> tmp = new HashSet<String>();
-				tmp.addAll( enabledFilters.keySet() );
+				final Set<String> tmp = new HashSet<String>( enabledFilters.keySet() );
 				this.filterNames = Collections.unmodifiableSet( tmp );
 
 			}

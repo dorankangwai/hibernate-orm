@@ -166,6 +166,10 @@ public class CriteriaImpl implements Criteria, Serializable {
 	}
 	@Override
 	public Criteria setFetchMode(String associationPath, FetchMode mode) {
+		String rootAliasPathPrefix = rootAlias + ".";
+		if (rootAlias != null && !associationPath.startsWith(rootAliasPathPrefix)) {
+			associationPath = rootAliasPathPrefix + associationPath;
+		}
 		fetchModes.put( associationPath, mode );
 		return this;
 	}
@@ -301,7 +305,7 @@ public class CriteriaImpl implements Criteria, Serializable {
 		}
 		return ( isReadOnlyInitialized() ?
 				readOnly :
-				getSession().getPersistenceContext().isDefaultReadOnly()
+				getSession().getPersistenceContextInternal().isDefaultReadOnly()
 		);
 	}
 

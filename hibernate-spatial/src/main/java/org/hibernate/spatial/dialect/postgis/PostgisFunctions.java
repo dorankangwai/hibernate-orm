@@ -16,7 +16,7 @@ import org.hibernate.type.Type;
 
 /**
  * Functions registered in all Postgis Dialects
- *
+ * <p>
  * Created by Karel Maesen, Geovise BVBA on 29/10/16.
  */
 class PostgisFunctions extends SpatialFunctionsRegistry {
@@ -43,6 +43,11 @@ class PostgisFunctions extends SpatialFunctionsRegistry {
 		put(
 				"envelope", new StandardSQLFunction(
 						"st_envelope"
+				)
+		);
+		put(
+				"makeenvelope", new StandardSQLFunction(
+						"st_makeenvelope"
 				)
 		);
 		put(
@@ -139,8 +144,7 @@ class PostgisFunctions extends SpatialFunctionsRegistry {
 				)
 		);
 		put(
-				"buffer", new StandardSQLFunction(
-						"st_buffer"
+				"buffer", new StandardSQLFunction( "st_buffer"
 				)
 		);
 		put(
@@ -201,4 +205,5 @@ class PostgisFunctions extends SpatialFunctionsRegistry {
 			return rendered + "::geometry";
 		}
 	}
+
 }

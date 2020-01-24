@@ -43,6 +43,22 @@ public class ExceptionUtil {
 	}
 
 	/**
+	 * Get a specific cause.
+	 *
+	 * @param t exception
+	 * @param causeClass cause type
+	 *
+	 * @return exception root cause
+	 */
+	public static Throwable findCause(Throwable t, Class<? extends Throwable> causeClass) {
+		Throwable cause = t.getCause();
+		if ( cause != null && !causeClass.equals( cause.getClass() ) ) {
+			return ( cause != t ) ? findCause( cause, causeClass ) : null;
+		}
+		return cause;
+	}
+
+	/**
 	 * Was the given exception caused by a SQL lock timeout?
 	 *
 	 * @param e exception
@@ -62,10 +78,15 @@ public class ExceptionUtil {
 		}
 		else {
 			Throwable rootCause = ExceptionUtil.rootCause( e );
-			if ( rootCause != null && (
-					rootCause.getMessage().contains( "timeout" ) ||
-							rootCause.getMessage().contains( "timed out" ) )
-					) {
+			if (
+					rootCause != null && (
+							rootCause.getMessage().contains( "timeout" ) ||
+									rootCause.getMessage().contains( "timed out" ) ||
+									rootCause.getMessage().contains( "lock(s) could not be acquired" ) ||
+									rootCause.getMessage().contains( "Could not acquire a lock" )
+
+					)
+			) {
 				return true;
 			}
 		}

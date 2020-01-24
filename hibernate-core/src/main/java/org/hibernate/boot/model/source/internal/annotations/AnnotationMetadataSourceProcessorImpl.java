@@ -22,15 +22,16 @@ import org.hibernate.annotations.common.reflection.ClassLoadingException;
 import org.hibernate.annotations.common.reflection.MetadataProviderInjector;
 import org.hibernate.annotations.common.reflection.ReflectionManager;
 import org.hibernate.annotations.common.reflection.XClass;
+import org.hibernate.boot.AttributeConverterInfo;
 import org.hibernate.boot.internal.MetadataBuildingContextRootImpl;
 import org.hibernate.boot.jaxb.spi.Binding;
+import org.hibernate.boot.model.convert.spi.ConverterDescriptor;
 import org.hibernate.boot.model.process.spi.ManagedResources;
 import org.hibernate.boot.model.source.spi.MetadataSourceProcessor;
 import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
 import org.hibernate.boot.spi.JpaOrmXmlPersistenceUnitDefaultAware;
 import org.hibernate.boot.spi.JpaOrmXmlPersistenceUnitDefaultAware.JpaOrmXmlPersistenceUnitDefaults;
 import org.hibernate.cfg.AnnotationBinder;
-import org.hibernate.cfg.AttributeConverterDefinition;
 import org.hibernate.cfg.InheritanceState;
 import org.hibernate.cfg.annotations.reflection.AttributeConverterDefinitionCollector;
 import org.hibernate.cfg.annotations.reflection.JPAMetadataProvider;
@@ -66,7 +67,7 @@ public class AnnotationMetadataSourceProcessorImpl implements MetadataSourceProc
 		this.rootMetadataBuildingContext = rootMetadataBuildingContext;
 		this.jandexView = jandexView;
 
-		this.reflectionManager = rootMetadataBuildingContext.getBuildingOptions().getReflectionManager();
+		this.reflectionManager = rootMetadataBuildingContext.getBootstrapContext().getReflectionManager();
 
 		if ( CollectionHelper.isNotEmpty( managedResources.getAnnotatedPackageNames() ) ) {
 			annotatedPackages.addAll( managedResources.getAnnotatedPackageNames() );
@@ -74,30 +75,34 @@ public class AnnotationMetadataSourceProcessorImpl implements MetadataSourceProc
 
 		final AttributeConverterManager attributeConverterManager = new AttributeConverterManager( rootMetadataBuildingContext );
 
-		// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-		// Ewww.  This is temporary until we migrate to Jandex + StAX for annotation binding
+		if ( rootMetadataBuildingContext.getBuildingOptions().isXmlMappingEnabled() ) {
 
-		final JPAMetadataProvider jpaMetadataProvider = (JPAMetadataProvider) ( (MetadataProviderInjector) reflectionManager ).getMetadataProvider();
-		for ( Binding xmlBinding : managedResources.getXmlMappingBindings() ) {
-//			if ( !MappingBinder.DelayedOrmXmlData.class.isInstance( xmlBinding.getRoot() ) ) {
-//				continue;
-//			}
-//
-//			// convert the StAX representation in delayedOrmXmlData to DOM because that's what commons-annotations needs
-//			final MappingBinder.DelayedOrmXmlData delayedOrmXmlData = (MappingBinder.DelayedOrmXmlData) xmlBinding.getRoot();
-//			org.dom4j.Document dom4jDocument = toDom4jDocument( delayedOrmXmlData );
-			if ( !org.dom4j.Document.class.isInstance( xmlBinding.getRoot() ) ) {
-				continue;
-			}
-			org.dom4j.Document dom4jDocument = (Document) xmlBinding.getRoot();
+			// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			// Ewww.  This is temporary until we migrate to Jandex + StAX for annotation binding
 
-			final List<String> classNames = jpaMetadataProvider.getXMLContext().addDocument( dom4jDocument );
-			for ( String className : classNames ) {
-				xClasses.add( toXClass( className, reflectionManager ) );
-			}
+				final JPAMetadataProvider jpaMetadataProvider = (JPAMetadataProvider) ( (MetadataProviderInjector) reflectionManager )
+						.getMetadataProvider();
+				for ( Binding xmlBinding : managedResources.getXmlMappingBindings() ) {
+	//			if ( !MappingBinder.DelayedOrmXmlData.class.isInstance( xmlBinding.getRoot() ) ) {
+	//				continue;
+	//			}
+	//
+	//			// convert the StAX representation in delayedOrmXmlData to DOM because that's what commons-annotations needs
+	//			final MappingBinder.DelayedOrmXmlData delayedOrmXmlData = (MappingBinder.DelayedOrmXmlData) xmlBinding.getRoot();
+	//			org.dom4j.Document dom4jDocument = toDom4jDocument( delayedOrmXmlData );
+					if ( !org.dom4j.Document.class.isInstance( xmlBinding.getRoot() ) ) {
+						continue;
+					}
+					org.dom4j.Document dom4jDocument = (Document) xmlBinding.getRoot();
+
+					final List<String> classNames = jpaMetadataProvider.getXMLContext().addDocument( dom4jDocument );
+					for ( String className : classNames ) {
+						xClasses.add( toXClass( className, reflectionManager ) );
+					}
+				}
+				jpaMetadataProvider.getXMLContext().applyDiscoveredAttributeConverters( attributeConverterManager );
+			// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 		}
-		jpaMetadataProvider.getXMLContext().applyDiscoveredAttributeConverters( attributeConverterManager );
-		// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 		final ClassLoaderService cls = rootMetadataBuildingContext.getBuildingOptions().getServiceRegistry().getService( ClassLoaderService.class );
 		for ( String className : managedResources.getAnnotatedClassNames() ) {
@@ -317,8 +322,15 @@ public class AnnotationMetadataSourceProcessorImpl implements MetadataSourceProc
 		}
 
 		@Override
-		public void addAttributeConverter(AttributeConverterDefinition definition) {
-			rootMetadataBuildingContext.getMetadataCollector().addAttributeConverter( definition );
+		public void addAttributeConverter(AttributeConverterInfo info) {
+			rootMetadataBuildingContext.getMetadataCollector().addAttributeConverter(
+					info.toConverterDescriptor( rootMetadataBuildingContext )
+			);
+		}
+
+		@Override
+		public void addAttributeConverter(ConverterDescriptor descriptor) {
+			rootMetadataBuildingContext.getMetadataCollector().addAttributeConverter( descriptor );
 		}
 
 		public void addAttributeConverter(Class<? extends AttributeConverter> converterClass) {

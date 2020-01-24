@@ -27,7 +27,6 @@ import org.hibernate.dialect.Dialect;
 import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment;
 import org.hibernate.engine.jdbc.env.spi.QualifiedObjectNameFormatter;
 import org.hibernate.engine.spi.Mapping;
-import org.hibernate.internal.util.StringHelper;
 import org.hibernate.tool.hbm2ddl.ColumnMetadata;
 import org.hibernate.tool.hbm2ddl.TableMetadata;
 import org.hibernate.tool.schema.extract.spi.ColumnInformation;
@@ -223,7 +222,7 @@ public class Table implements RelationalModel, Serializable, Exportable {
 	/**
 	 * Return the column which is identified by column provided as argument.
 	 *
-	 * @param column column with atleast a name.
+	 * @param column column with at least a name.
 	 * @return the underlying column or null if not inside this table. Note: the instance *can* be different than the input parameter, but the name will be the same.
 	 */
 	public Column getColumn(Column column) {
@@ -409,7 +408,7 @@ public class Table implements RelationalModel, Serializable, Exportable {
 				&& Identifier.areEqual( schema, table.schema )
 				&& Identifier.areEqual( catalog, table.catalog );
 	}
-	
+
 	public void validateColumns(Dialect dialect, Mapping mapping, TableMetadata tableInfo) {
 		Iterator iter = getColumnIterator();
 		while ( iter.hasNext() ) {
@@ -442,13 +441,17 @@ public class Table implements RelationalModel, Serializable, Exportable {
 			Dialect dialect,
 			Metadata metadata,
 			TableInformation tableInfo,
-			String defaultCatalog,
-			String defaultSchema) throws HibernateException {
-		
+			Identifier defaultCatalog,
+			Identifier defaultSchema) throws HibernateException {
+
 		final JdbcEnvironment jdbcEnvironment = metadata.getDatabase().getJdbcEnvironment();
 
 		final String tableName = jdbcEnvironment.getQualifiedObjectNameFormatter().format(
-				tableInfo.getName(),
+				new QualifiedTableName(
+					catalog != null ? catalog : defaultCatalog,
+					schema != null ? schema : defaultSchema,
+					name
+				),
 				dialect
 		);
 
@@ -458,7 +461,7 @@ public class Table implements RelationalModel, Serializable, Exportable {
 
 		Iterator iter = getColumnIterator();
 		List results = new ArrayList();
-		
+
 		while ( iter.hasNext() ) {
 			final Column column = (Column) iter.next();
 			final ColumnInformation columnInfo = tableInfo.getColumn( Identifier.toIdentifier( column.getName(), column.isQuoted() ) );
@@ -566,7 +569,7 @@ public class Table implements RelationalModel, Serializable, Exportable {
 				}
 
 			}
-			
+
 			if ( col.isUnique() ) {
 				String keyName = Constraint.generateName( "UK_", this, col );
 				UniqueKey uk = getOrCreateUniqueKey( keyName );
@@ -574,7 +577,7 @@ public class Table implements RelationalModel, Serializable, Exportable {
 				buf.append( dialect.getUniqueDelegate()
 						.getColumnDefinitionUniquenessFragment( col ) );
 			}
-				
+
 			if ( col.hasCheckConstraint() && dialect.supportsColumnCheck() ) {
 				buf.append( " check (" )
 						.append( col.getCheckConstraint() )
@@ -885,9 +888,9 @@ public class Table implements RelationalModel, Serializable, Exportable {
 		@Override
 		public String toString() {
 			return "ForeignKeyKey{" +
-					"columns=" + StringHelper.join( ",", columns ) +
+					"columns=" + String.join( ",", columns ) +
 					", referencedClassName='" + referencedClassName + '\'' +
-					", referencedColumns=" + StringHelper.join( ",", referencedColumns ) +
+					", referencedColumns=" + String.join( ",", referencedColumns ) +
 					'}';
 		}
 	}

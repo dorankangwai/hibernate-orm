@@ -15,9 +15,6 @@ import java.sql.SQLException;
 import org.hibernate.ConnectionAcquisitionMode;
 import org.hibernate.ConnectionReleaseMode;
 import org.hibernate.ResourceClosedException;
-import org.hibernate.cfg.AvailableSettings;
-import org.hibernate.engine.config.spi.ConfigurationService;
-import org.hibernate.engine.config.spi.StandardConverters;
 import org.hibernate.engine.jdbc.connections.spi.JdbcConnectionAccess;
 import org.hibernate.engine.jdbc.spi.JdbcServices;
 import org.hibernate.engine.jdbc.spi.SqlExceptionHelper;
@@ -50,27 +47,18 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 
 	public LogicalConnectionManagedImpl(
 			JdbcConnectionAccess jdbcConnectionAccess,
-			JdbcSessionContext jdbcSessionContext) {
-		this( jdbcConnectionAccess, jdbcSessionContext, new ResourceRegistryStandardImpl() );
-	}
-
-	public LogicalConnectionManagedImpl(
-			JdbcConnectionAccess jdbcConnectionAccess,
 			JdbcSessionContext jdbcSessionContext,
-			ResourceRegistry resourceRegistry) {
+			ResourceRegistry resourceRegistry,
+			JdbcServices jdbcServices) {
 		this.jdbcConnectionAccess = jdbcConnectionAccess;
 		this.observer = jdbcSessionContext.getObserver();
 		this.resourceRegistry = resourceRegistry;
 
 		this.connectionHandlingMode = determineConnectionHandlingMode(
 				jdbcSessionContext.getPhysicalConnectionHandlingMode(),
-				jdbcConnectionAccess
+				jdbcConnectionAccess );
 
-		);
-
-		this.sqlExceptionHelper = jdbcSessionContext.getServiceRegistry()
-				.getService( JdbcServices.class )
-				.getSqlExceptionHelper();
+		this.sqlExceptionHelper = jdbcServices.getSqlExceptionHelper();
 
 		if ( connectionHandlingMode.getAcquisitionMode() == ConnectionAcquisitionMode.IMMEDIATELY ) {
 			acquireConnectionIfNeeded();
@@ -103,14 +91,15 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 			JdbcConnectionAccess jdbcConnectionAccess,
 			JdbcSessionContext jdbcSessionContext,
 			boolean closed) {
-		this( jdbcConnectionAccess, jdbcSessionContext, new ResourceRegistryStandardImpl() );
+		this( jdbcConnectionAccess, jdbcSessionContext, new ResourceRegistryStandardImpl(),
+				jdbcSessionContext.getServiceRegistry().getService( JdbcServices.class )
+		);
 		this.closed = closed;
 	}
 
 	private Connection acquireConnectionIfNeeded() {
 		if ( physicalConnection == null ) {
 			// todo : is this the right place for these observer calls?
-			observer.jdbcConnectionAcquisitionStart();
 			try {
 				physicalConnection = jdbcConnectionAccess.obtainConnection();
 			}
@@ -196,8 +185,6 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 			return;
 		}
 
-		// todo : is this the right place for these observer calls?
-		observer.jdbcConnectionReleaseStart();
 		try {
 			if ( !physicalConnection.isClosed() ) {
 				sqlExceptionHelper.logAndClearWarnings( physicalConnection );
@@ -230,7 +217,7 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 	public static LogicalConnectionManagedImpl deserialize(
 			ObjectInputStream ois,
 			JdbcConnectionAccess jdbcConnectionAccess,
-			JdbcSessionContext jdbcSessionContext) throws IOException, ClassNotFoundException {
+			JdbcSessionContext jdbcSessionContext) throws IOException {
 		final boolean isClosed = ois.readBoolean();
 		return new LogicalConnectionManagedImpl( jdbcConnectionAccess, jdbcSessionContext, isClosed );
 	}
@@ -274,10 +261,10 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 
 	@Override
 	protected void afterCompletion() {
-		afterTransaction();
-
 		resetConnection( initiallyAutoCommit );
 		initiallyAutoCommit = false;
+
+		afterTransaction();
 	}
 
 	@Override

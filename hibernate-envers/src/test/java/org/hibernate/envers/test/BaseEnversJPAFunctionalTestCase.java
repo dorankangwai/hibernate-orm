@@ -42,7 +42,6 @@ import org.junit.After;
  * @author Strong Liu (stliu@hibernate.org)
  */
 public abstract class BaseEnversJPAFunctionalTestCase extends AbstractEnversTest {
-	private static final Logger log = Logger.getLogger( BaseEnversJPAFunctionalTestCase.class );
 
 	private static final Dialect dialect = Dialect.getDialect();
 
@@ -149,7 +148,7 @@ public abstract class BaseEnversJPAFunctionalTestCase extends AbstractEnversTest
 	protected void addMappings(Map settings) {
 		String[] mappings = getMappings();
 		if ( mappings != null ) {
-			settings.put( AvailableSettings.HBXML_FILES, StringHelper.join( ",", mappings ) );
+			settings.put( AvailableSettings.HBXML_FILES, String.join( ",", mappings ) );
 		}
 	}
 

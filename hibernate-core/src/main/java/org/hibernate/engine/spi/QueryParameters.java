@@ -25,6 +25,7 @@ import org.hibernate.internal.FilterImpl;
 import org.hibernate.internal.util.EntityPrinter;
 import org.hibernate.internal.util.collections.ArrayHelper;
 import org.hibernate.query.internal.QueryParameterBindingsImpl;
+import org.hibernate.query.spi.QueryParameterBindings;
 import org.hibernate.transform.ResultTransformer;
 import org.hibernate.type.ComponentType;
 import org.hibernate.type.Type;
@@ -45,6 +46,7 @@ public final class QueryParameters {
 	private Type[] positionalParameterTypes;
 	private Object[] positionalParameterValues;
 	private Map<String,TypedValue> namedParameters;
+
 	private LockOptions lockOptions;
 	private RowSelection rowSelection;
 	private boolean cacheable;
@@ -68,7 +70,7 @@ public final class QueryParameters {
 	private String processedSQL;
 	private Type[] processedPositionalParameterTypes;
 	private Object[] processedPositionalParameterValues;
-	
+
 	private HQLQueryPlan queryPlan;
 
 	public QueryParameters() {
@@ -89,7 +91,6 @@ public final class QueryParameters {
 		this.optionalObject = optionalObject;
 		this.optionalId = optionalObjectId;
 		this.optionalEntityName = optionalEntityName;
-
 	}
 
 	public QueryParameters(
@@ -229,7 +230,7 @@ public final class QueryParameters {
 	}
 
 	public QueryParameters(
-			QueryParameterBindingsImpl queryParameterBindings,
+			QueryParameterBindings queryParameterBindings,
 			LockOptions lockOptions,
 			RowSelection selection,
 			final boolean isReadOnlyInitialized,
@@ -469,7 +470,7 @@ public final class QueryParameters {
 	public boolean isReadOnly(SharedSessionContractImplementor session) {
 		return isReadOnlyInitialized
 				? isReadOnly()
-				: session.getPersistenceContext().isDefaultReadOnly();
+				: session.getPersistenceContextInternal().isDefaultReadOnly();
 	}
 
 	/**
@@ -652,6 +653,7 @@ public final class QueryParameters {
 		copy.processedSQL = this.processedSQL;
 		copy.processedPositionalParameterTypes = this.processedPositionalParameterTypes;
 		copy.processedPositionalParameterValues = this.processedPositionalParameterValues;
+		copy.passDistinctThrough = this.passDistinctThrough;
 		return copy;
 	}
 
@@ -661,5 +663,21 @@ public final class QueryParameters {
 
 	public void setQueryPlan(HQLQueryPlan queryPlan) {
 		this.queryPlan = queryPlan;
+	}
+
+	public void bindDynamicParameter(Type paramType, Object paramValue) {
+		if(processedPositionalParameterTypes != null) {
+			int length = processedPositionalParameterTypes.length;
+			Type[] types = new Type[length + 1];
+			Object[] values = new Object[length + 1];
+			for ( int i = 0; i < length; i++ ) {
+				types[i] = processedPositionalParameterTypes[i];
+				values[i] = processedPositionalParameterValues[i];
+			}
+			types[length] = paramType;
+			values[length] = paramValue;
+			processedPositionalParameterTypes = types;
+			processedPositionalParameterValues = values;
+		}
 	}
 }

@@ -13,11 +13,13 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 import javax.persistence.ElementCollection;
 import javax.persistence.JoinColumn;
 import javax.persistence.Lob;
 import javax.persistence.MapKey;
+import javax.persistence.MapKeyEnumerated;
 import javax.persistence.OneToMany;
 import javax.persistence.Version;
 
@@ -27,7 +29,6 @@ import org.hibernate.annotations.common.reflection.ClassLoadingException;
 import org.hibernate.annotations.common.reflection.ReflectionManager;
 import org.hibernate.annotations.common.reflection.XClass;
 import org.hibernate.annotations.common.reflection.XProperty;
-import org.hibernate.cfg.AccessType;
 import org.hibernate.envers.AuditJoinTable;
 import org.hibernate.envers.AuditMappedBy;
 import org.hibernate.envers.AuditOverride;
@@ -61,6 +62,7 @@ import static org.hibernate.envers.internal.tools.Tools.newHashSet;
  * @author Lukasz Antoniak (lukasz dot antoniak at gmail dot com)
  * @author Michal Skowronek (mskowr at o2 dot pl)
  * @author Lukasz Zuchowski (author at zuchos dot com)
+ * @author Chris Cranford
  */
 public class AuditedPropertiesReader {
 	private static final EnversMessageLogger LOG = Logger.getMessageLogger(
@@ -75,13 +77,14 @@ public class AuditedPropertiesReader {
 	private final ReflectionManager reflectionManager;
 	private final String propertyNamePrefix;
 
-	private final Set<String> propertyAccessedPersistentProperties;
+	private final Map<String, String> propertyAccessedPersistentProperties;
 	private final Set<String> fieldAccessedPersistentProperties;
 	// Mapping class field to corresponding <properties> element.
 	private final Map<String, String> propertiesGroupMapping;
 
 	private final Set<XProperty> overriddenAuditedProperties;
 	private final Set<XProperty> overriddenNotAuditedProperties;
+	private final Map<XProperty, AuditJoinTable> overriddenAuditedPropertiesJoinTables;
 
 	private final Set<XClass> overriddenAuditedClasses;
 	private final Set<XClass> overriddenNotAuditedClasses;
@@ -100,12 +103,13 @@ public class AuditedPropertiesReader {
 		this.reflectionManager = reflectionManager;
 		this.propertyNamePrefix = propertyNamePrefix;
 
-		propertyAccessedPersistentProperties = newHashSet();
+		propertyAccessedPersistentProperties = newHashMap();
 		fieldAccessedPersistentProperties = newHashSet();
 		propertiesGroupMapping = newHashMap();
 
 		overriddenAuditedProperties = newHashSet();
 		overriddenNotAuditedProperties = newHashSet();
+		overriddenAuditedPropertiesJoinTables = newHashMap();
 
 		overriddenAuditedClasses = newHashSet();
 		overriddenNotAuditedClasses = newHashSet();
@@ -162,6 +166,7 @@ public class AuditedPropertiesReader {
 						if ( !overriddenNotAuditedProperties.contains( property ) ) {
 							// If the property has not been marked as not audited by the subclass.
 							overriddenAuditedProperties.add( property );
+							overriddenAuditedPropertiesJoinTables.put( property, auditOverride.auditJoinTable() );
 						}
 					}
 					else {
@@ -268,7 +273,7 @@ public class AuditedPropertiesReader {
 			fieldAccessedPersistentProperties.add( property.getName() );
 		}
 		else {
-			propertyAccessedPersistentProperties.add( property.getName() );
+			propertyAccessedPersistentProperties.put( property.getName(), property.getPropertyAccessorName() );
 		}
 	}
 
@@ -314,11 +319,14 @@ public class AuditedPropertiesReader {
 		Audited audited = computeAuditConfiguration( dynamicComponentSource.getXClass() );
 		if ( !fieldAccessedPersistentProperties.isEmpty() ) {
 			throw new MappingException(
-					"Audited dynamic component cannot have properties with access=\"field\" for properties: " + fieldAccessedPersistentProperties + ". \n Change properties access=\"property\", to make it work)"
+					"Audited dynamic component cannot have properties with access=\"field\" for properties: " +
+							fieldAccessedPersistentProperties +
+							". \n Change properties access=\"property\", to make it work)"
 			);
 		}
-		for ( String property : propertyAccessedPersistentProperties ) {
-			String accessType = AccessType.PROPERTY.getType();
+		for ( Map.Entry<String, String> entry : propertyAccessedPersistentProperties.entrySet() ) {
+			String property = entry.getKey();
+			String accessType = entry.getValue();
 			if ( !auditedPropertiesHolder.contains( property ) ) {
 				final Value propertyValue = persistentPropertiesSource.getProperty( property ).getValue();
 				if ( propertyValue instanceof Component ) {
@@ -351,14 +359,14 @@ public class AuditedPropertiesReader {
 		//look in the class
 		addFromProperties(
 				clazz.getDeclaredProperties( "field" ),
-				"field",
+				it -> "field",
 				fieldAccessedPersistentProperties,
 				allClassAudited
 		);
 		addFromProperties(
 				clazz.getDeclaredProperties( "property" ),
-				"property",
-				propertyAccessedPersistentProperties,
+				propertyAccessedPersistentProperties::get,
+				propertyAccessedPersistentProperties.keySet(),
 				allClassAudited
 		);
 
@@ -372,10 +380,12 @@ public class AuditedPropertiesReader {
 
 	private void addFromProperties(
 			Iterable<XProperty> properties,
-			String accessType,
+			Function<String, String> accessTypeProvider,
 			Set<String> persistentProperties,
 			Audited allClassAudited) {
 		for ( XProperty property : properties ) {
+			final String accessType = accessTypeProvider.apply( property.getName() );
+
 			// If this is not a persistent property, with the same access type as currently checked,
 			// it's not audited as well.
 			// If the property was already defined by the subclass, is ignored by superclasses
@@ -580,13 +590,9 @@ public class AuditedPropertiesReader {
 			propertyData.setStore( aud.modStore() );
 			propertyData.setRelationTargetAuditMode( aud.targetAuditMode() );
 			propertyData.setUsingModifiedFlag( checkUsingModifiedFlag( aud ) );
+			propertyData.setModifiedFlagName( MetadataTools.getModifiedFlagPropertyName( propertyName, modifiedFlagSuffix ) );
 			if( aud.modifiedColumnName() != null && !"".equals( aud.modifiedColumnName() ) ) {
-				propertyData.setModifiedFlagName( aud.modifiedColumnName() );
-			}
-			else {
-				propertyData.setModifiedFlagName(
-						MetadataTools.getModifiedFlagPropertyName( propertyName, modifiedFlagSuffix )
-				);
+				propertyData.setExplicitModifiedFlagName( aud.modifiedColumnName() );
 			}
 			return true;
 		}
@@ -631,16 +637,36 @@ public class AuditedPropertiesReader {
 		if ( mapKey != null ) {
 			propertyData.setMapKey( mapKey.name() );
 		}
+		else {
+			final MapKeyEnumerated mapKeyEnumerated = property.getAnnotation( MapKeyEnumerated.class );
+			if ( mapKeyEnumerated != null ) {
+				propertyData.setMapKeyEnumType( mapKeyEnumerated.value() );
+			}
+		}
 	}
 
 	private void addPropertyJoinTables(XProperty property, PropertyAuditingData propertyData) {
-		// first set the join table based on the AuditJoinTable annotation
-		final AuditJoinTable joinTable = property.getAnnotation( AuditJoinTable.class );
-		if ( joinTable != null ) {
-			propertyData.setJoinTable( joinTable );
+		// The AuditJoinTable annotation source will follow the following priority rules
+		//		1. Use the override if one is specified
+		//		2. Use the site annotation if one is specified
+		//		3. Use the default if neither are specified
+		//
+		// The prime directive for (1) is so that when users in a subclass use @AuditOverride(s)
+		// the join-table specified there should have a higher priority in the event the
+		// super-class defines an equivalent @AuditJoinTable at the site/property level.
+
+		final AuditJoinTable overrideJoinTable = overriddenAuditedPropertiesJoinTables.get( property );
+		if ( overrideJoinTable != null ) {
+			propertyData.setJoinTable( overrideJoinTable );
 		}
 		else {
-			propertyData.setJoinTable( DEFAULT_AUDIT_JOIN_TABLE );
+			final AuditJoinTable propertyJoinTable = property.getAnnotation( AuditJoinTable.class );
+			if ( propertyJoinTable != null ) {
+				propertyData.setJoinTable( propertyJoinTable );
+			}
+			else {
+				propertyData.setJoinTable( DEFAULT_AUDIT_JOIN_TABLE );
+			}
 		}
 	}
 
@@ -687,7 +713,6 @@ public class AuditedPropertiesReader {
 					}
 				}
 			}
-
 		}
 		return true;
 	}

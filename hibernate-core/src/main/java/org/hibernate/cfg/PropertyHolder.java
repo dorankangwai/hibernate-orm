@@ -13,7 +13,7 @@ import javax.persistence.JoinTable;
 
 import org.hibernate.annotations.common.reflection.XClass;
 import org.hibernate.annotations.common.reflection.XProperty;
-import org.hibernate.boot.spi.AttributeConverterDescriptor;
+import org.hibernate.boot.model.convert.spi.ConverterDescriptor;
 import org.hibernate.mapping.Join;
 import org.hibernate.mapping.KeyValue;
 import org.hibernate.mapping.PersistentClass;
@@ -44,7 +44,7 @@ public interface PropertyHolder {
 	boolean isOrWithinEmbeddedId();
 
 	/**
-	 * Return true if this component is withing an @ElementCollection.
+	 * Return true if this component is within an @ElementCollection.
 	 */
 	boolean isWithinElementCollection();
 
@@ -104,7 +104,7 @@ public interface PropertyHolder {
 	 * Determine the AttributeConverter to use for the given property.
 	 *
 	 * @param property
-	 * @return
+	 * @return The ConverterDescriptor
 	 */
-	AttributeConverterDescriptor resolveAttributeConverterDescriptor(XProperty property);
+	ConverterDescriptor resolveAttributeConverterDescriptor(XProperty property);
 }

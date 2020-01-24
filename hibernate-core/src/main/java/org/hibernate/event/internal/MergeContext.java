@@ -46,7 +46,7 @@ import org.jboss.logging.Logger;
  * <ul>
  *     <li>Methods that return collections (e.g., {@link #keySet()},
  *          {@link #values()}, {@link #entrySet()}) return an
- *          unnmodifiable view of the collection;</li>
+ *          unmodifiable view of the collection;</li>
  *     <li>If {@link #put(Object mergeEntity, Object) managedEntity} or
  *         {@link #put(Object mergeEntity, Object managedEntity, boolean isOperatedOn)}
  *         is executed and this MergeMap already contains a cross-reference for
@@ -77,7 +77,7 @@ import org.jboss.logging.Logger;
  *
  * @author Gail Badner
  */
-class MergeContext implements Map {
+public class MergeContext implements Map {
 	private static final Logger LOG = Logger.getLogger( MergeContext.class );
 
 	private final EventSource session;
@@ -101,7 +101,7 @@ class MergeContext implements Map {
 	    // key is a merge entity;
 	    // value is a flag indicating if the merge entity is currently in the merge process.
 
-	MergeContext(EventSource session, EntityCopyObserver entityCopyObserver){
+	public MergeContext(EventSource session, EntityCopyObserver entityCopyObserver){
 		this.session = session;
 		this.entityCopyObserver = entityCopyObserver;
 	}
@@ -226,20 +226,9 @@ class MergeContext implements Map {
 	 * managed entity associated with <code>mergeEntity</code>
 	 * @throws IllegalStateException if internal cross-references are out of sync,
 	 */
-	/* package-private */ Object put(Object mergeEntity, Object managedEntity, boolean isOperatedOn) {
+	public Object put(Object mergeEntity, Object managedEntity, boolean isOperatedOn) {
 		if ( mergeEntity == null || managedEntity == null ) {
 			throw new NullPointerException( "null merge and managed entities are not supported by " + getClass().getName() );
-		}
-
-		// Detect invalid 'managed entity' -> 'managed entity' mappings where key != value
-		if ( managedToMergeEntityXref.containsKey( mergeEntity ) ) {
-			if ( managedToMergeEntityXref.get( mergeEntity ) != mergeEntity ) {
-				throw new IllegalStateException(
-						"MergeContext#attempt to create managed -> managed mapping with different entities: "
-								+ printEntity( mergeEntity ) + "; " + printEntity(
-								managedEntity )
-				);
-			}
 		}
 
 		Object oldManagedEntity = mergeToManagedEntityXref.put( mergeEntity, managedEntity );
@@ -262,7 +251,7 @@ class MergeContext implements Map {
 			}
 			if ( oldOperatedOn != null ) {
 				throw new IllegalStateException(
-						"MergeContext#mergeEntityToOperatedOnFlagMap contains an merge entity " + printEntity( mergeEntity )
+						"MergeContext#mergeEntityToOperatedOnFlagMap contains a merge entity " + printEntity( mergeEntity )
 								+ ", but MergeContext#mergeToManagedEntityXref does not."
 				);
 			}
@@ -278,7 +267,7 @@ class MergeContext implements Map {
 			}
 			if ( oldOperatedOn == null ) {
 				throw new IllegalStateException(
-						"MergeContext#mergeToManagedEntityXref contained an mergeEntity " + printEntity( mergeEntity )
+						"MergeContext#mergeToManagedEntityXref contained a merge entity " + printEntity( mergeEntity )
 								+ ", but MergeContext#mergeEntityToOperatedOnFlagMap did not."
 				);
 			}
@@ -358,7 +347,7 @@ class MergeContext implements Map {
 	 * @throws NullPointerException if mergeEntity is null
 	 * @throws IllegalStateException if this MergeContext does not contain a a cross-reference for mergeEntity
 	 */
-	/* package-private */ void setOperatedOn(Object mergeEntity, boolean isOperatedOn) {
+	public void setOperatedOn(Object mergeEntity, boolean isOperatedOn) {
 		if ( mergeEntity == null ) {
 			throw new NullPointerException( "null entities are not supported by " + getClass().getName() );
 		}
@@ -385,7 +374,7 @@ class MergeContext implements Map {
 	}
 
 	private String printEntity(Object entity) {
-		if ( session.getPersistenceContext().getEntry( entity ) != null ) {
+		if ( session.getPersistenceContextInternal().getEntry( entity ) != null ) {
 			return MessageHelper.infoString( session.getEntityName( entity ), session.getIdentifier( entity ) );
 		}
 		// Entity was not found in current persistence context. Use Object#toString() method.
