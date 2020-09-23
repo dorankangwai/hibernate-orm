@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import javax.naming.Reference;
 import javax.naming.StringRefAddr;
@@ -84,6 +85,7 @@ import org.hibernate.engine.spi.SessionOwner;
 import org.hibernate.engine.transaction.jta.platform.spi.JtaPlatform;
 import org.hibernate.event.service.spi.EventListenerGroup;
 import org.hibernate.event.service.spi.EventListenerRegistry;
+import org.hibernate.event.spi.EventEngine;
 import org.hibernate.event.spi.EventType;
 import org.hibernate.graph.spi.RootGraphImplementor;
 import org.hibernate.id.IdentifierGenerator;
@@ -167,6 +169,7 @@ public class SessionFactoryImpl implements SessionFactoryImplementor {
 	private final transient Map<String,Object> properties;
 
 	private final transient SessionFactoryServiceRegistry serviceRegistry;
+	private final transient EventEngine eventEngine;
 	private final transient JdbcServices jdbcServices;
 
 	private final transient SQLFunctionRegistry sqlFunctionRegistry;
@@ -197,7 +200,8 @@ public class SessionFactoryImpl implements SessionFactoryImplementor {
 
 	public SessionFactoryImpl(
 			final MetadataImplementor metadata,
-			SessionFactoryOptions options) {
+			SessionFactoryOptions options,
+			QueryPlanCache.QueryPlanCreator queryPlanCacheFunction) {
 		LOG.debug( "Building session factory" );
 
 		this.sessionFactoryOptions = options;
@@ -207,6 +211,8 @@ public class SessionFactoryImpl implements SessionFactoryImplementor {
 				.getServiceRegistry()
 				.getService( SessionFactoryServiceRegistryFactory.class )
 				.buildServiceRegistry( this, options );
+
+		this.eventEngine = new EventEngine( metadata, this );
 
 		metadata.initSessionFactory( this );
 
@@ -256,7 +262,7 @@ public class SessionFactoryImpl implements SessionFactoryImplementor {
 		LOG.debugf( "Session factory constructed with filter configurations : %s", filters );
 		LOG.debugf( "Instantiating session factory with properties: %s", properties );
 
-		this.queryPlanCache = new QueryPlanCache( this );
+		this.queryPlanCache = new QueryPlanCache( this, queryPlanCacheFunction );
 
 		class IntegratorObserver implements SessionFactoryObserver {
 			private ArrayList<Integrator> integrators = new ArrayList<>();
@@ -445,7 +451,7 @@ public class SessionFactoryImpl implements SessionFactoryImplementor {
 
 	public Session openSession() throws HibernateException {
 		final CurrentTenantIdentifierResolver currentTenantIdentifierResolver = getCurrentTenantIdentifierResolver();
-		//We can only use reuse the defaultSessionOpenOptions as a constant when there is no TenantIdentifierResolver
+		//We can only reuse the defaultSessionOpenOptions as a constant when there is no TenantIdentifierResolver
 		if ( currentTenantIdentifierResolver != null ) {
 			return this.withOptions().openSession();
 		}
@@ -456,7 +462,7 @@ public class SessionFactoryImpl implements SessionFactoryImplementor {
 
 	public Session openTemporarySession() throws HibernateException {
 		final CurrentTenantIdentifierResolver currentTenantIdentifierResolver = getCurrentTenantIdentifierResolver();
-		//We can only use reuse the defaultSessionOpenOptions as a constant when there is no TenantIdentifierResolver
+		//We can only reuse the defaultSessionOpenOptions as a constant when there is no TenantIdentifierResolver
 		if ( currentTenantIdentifierResolver != null ) {
 			return buildTemporarySessionOpenOptions()
 					.openSession();
@@ -516,6 +522,11 @@ public class SessionFactoryImpl implements SessionFactoryImplementor {
 	@Override
 	public String getName() {
 		return name;
+	}
+
+	@Override
+	public EventEngine getEventEngine() {
+		return eventEngine;
 	}
 
 	@Override
@@ -1086,7 +1097,7 @@ public class SessionFactoryImpl implements SessionFactoryImplementor {
 			return interceptor;
 		}
 
-		// prefer the SF-scoped interceptor, prefer that to any Session-scoped interceptor prototype
+		// prefer the SessionFactory-scoped interceptor, prefer that to any Session-scoped interceptor prototype
 		final Interceptor optionsInterceptor = options.getInterceptor();
 		if ( optionsInterceptor != null && optionsInterceptor != EmptyInterceptor.INSTANCE ) {
 			return optionsInterceptor;
@@ -1151,9 +1162,6 @@ public class SessionFactoryImpl implements SessionFactoryImplementor {
 			this.statementInspector = sessionFactoryOptions.getStatementInspector();
 			this.connectionHandlingMode = sessionFactoryOptions.getPhysicalConnectionHandlingMode();
 			this.autoClose = sessionFactoryOptions.isAutoCloseSessionEnabled();
-			this.flushMode = sessionFactoryOptions.isFlushBeforeCompletionEnabled()
-					? FlushMode.AUTO
-					: FlushMode.MANUAL;
 
 			final CurrentTenantIdentifierResolver currentTenantIdentifierResolver = sessionFactory.getCurrentTenantIdentifierResolver();
 			if ( currentTenantIdentifierResolver != null ) {
@@ -1300,7 +1308,7 @@ public class SessionFactoryImpl implements SessionFactoryImplementor {
 		@SuppressWarnings("unchecked")
 		public T connectionReleaseMode(ConnectionReleaseMode connectionReleaseMode) {
 			// NOTE : Legacy behavior (when only ConnectionReleaseMode was exposed) was to always acquire a
-			// Connection using ConnectionAcquisitionMode.AS_NEEDED..
+			// Connection using ConnectionAcquisitionMode.AS_NEEDED.
 
 			final PhysicalConnectionHandlingMode handlingMode = PhysicalConnectionHandlingMode.interpret(
 					ConnectionAcquisitionMode.AS_NEEDED,
@@ -1368,7 +1376,7 @@ public class SessionFactoryImpl implements SessionFactoryImplementor {
 		@SuppressWarnings("unchecked")
 		public T clearEventListeners() {
 			if ( listeners == null ) {
-				//Needs to initialize explicitly to an empty list as otherwise "null" immplies the default listeners will be applied
+				//Needs to initialize explicitly to an empty list as otherwise "null" implies the default listeners will be applied
 				this.listeners = new ArrayList<SessionEventListener>( 3 );
 			}
 			else {
@@ -1647,7 +1655,8 @@ public class SessionFactoryImpl implements SessionFactoryImplementor {
 	/**
 	 * @return the FastSessionServices for this SessionFactory.
 	 */
-	FastSessionServices getFastSessionServices() {
+	@Override
+	public FastSessionServices getFastSessionServices() {
 		return this.fastSessionServices;
 	}
 

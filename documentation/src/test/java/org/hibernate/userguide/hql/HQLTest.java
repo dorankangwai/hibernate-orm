@@ -10,7 +10,6 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
@@ -25,6 +24,7 @@ import javax.persistence.TypedQuery;
 import org.hibernate.CacheMode;
 import org.hibernate.ScrollableResults;
 import org.hibernate.Session;
+import org.hibernate.dialect.CockroachDB192Dialect;
 import org.hibernate.dialect.H2Dialect;
 import org.hibernate.dialect.MySQL5Dialect;
 import org.hibernate.dialect.Oracle8iDialect;
@@ -43,7 +43,6 @@ import org.hibernate.userguide.model.PhoneType;
 import org.hibernate.userguide.model.WireTransferPayment;
 
 import org.hibernate.testing.DialectChecks;
-import org.hibernate.testing.FailureExpected;
 import org.hibernate.testing.RequiresDialect;
 import org.hibernate.testing.RequiresDialectFeature;
 import org.hibernate.testing.SkipForDialect;
@@ -674,6 +673,38 @@ public class HQLTest extends BaseEntityManagerFunctionalTestCase {
 	}
 
 	@Test
+	public void test_jpql_api_stream_example() {
+		doInJPA( this::entityManagerFactory, entityManager -> {
+			//tag::jpql-api-stream-example[]
+			try(Stream<Person> personStream = entityManager.createQuery(
+				"select p " +
+				"from Person p " +
+				"where p.name like :name", Person.class )
+			.setParameter( "name", "J%" )
+			.getResultStream()) {
+				List<Person> persons = personStream
+					.skip( 5 )
+					.limit( 5 )
+					.collect( Collectors.toList() );
+			}
+			//end::jpql-api-stream-example[]
+
+			// tag::jpql-api-stream-terminal-operation[]
+			List<Person> persons = entityManager.createQuery(
+					"select p " +
+					"from Person p " +
+					"where p.name like :name", Person.class )
+			.setParameter( "name", "J%" )
+			.getResultStream()
+			.skip( 5 )
+			.limit( 5 )
+			.collect( Collectors.toList() );
+
+			//end::jpql-api-stream-terminal-operation[]
+		});
+	}
+
+	@Test
 	public void test_jpql_api_single_result_example() {
 		doInJPA( this::entityManagerFactory, entityManager -> {
 			//tag::jpql-api-single-result-example[]
@@ -1266,6 +1297,7 @@ public class HQLTest extends BaseEntityManagerFunctionalTestCase {
 	}
 
 	@Test
+	@SkipForDialect(value = CockroachDB192Dialect.class, comment = "https://github.com/cockroachdb/cockroach/issues/26710")
 	public void test_hql_sqrt_function_example() {
 		doInJPA( this::entityManagerFactory, entityManager -> {
 			//tag::hql-sqrt-function-example[]

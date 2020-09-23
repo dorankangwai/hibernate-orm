@@ -7,6 +7,7 @@
 package org.hibernate.spatial.dialect.oracle;
 
 import java.io.Serializable;
+import java.util.Locale;
 
 import org.hibernate.boot.model.TypeContributions;
 import org.hibernate.boot.registry.selector.spi.StrategySelector;
@@ -22,6 +23,7 @@ import org.hibernate.spatial.SpatialDialect;
 import org.hibernate.spatial.SpatialFunction;
 import org.hibernate.spatial.SpatialRelation;
 import org.hibernate.spatial.dialect.SpatialFunctionsRegistry;
+import org.hibernate.spatial.dialect.WithCustomJPAFilter;
 
 import org.jboss.logging.Logger;
 
@@ -33,7 +35,7 @@ import org.geolatte.geom.codec.db.oracle.OracleJDBCTypeFactory;
  * <p>
  * Created by Karel Maesen, Geovise BVBA on 01/11/16.
  */
-class OracleSDOSupport implements SpatialDialect, Serializable {
+class OracleSDOSupport implements SpatialDialect, Serializable, WithCustomJPAFilter {
 
 	private static final HSMessageLogger log = Logger.getMessageLogger(
 			HSMessageLogger.class,
@@ -104,7 +106,7 @@ class OracleSDOSupport implements SpatialDialect, Serializable {
 	}
 
 	public String getOGCSpatialRelateSQL(String arg1, String arg2, int spatialRelation) {
-		final StringBuffer ogcFunction = new StringBuffer( "MDSYS." );
+		final StringBuilder ogcFunction = new StringBuilder( "MDSYS." );
 		switch ( spatialRelation ) {
 			case SpatialRelation.INTERSECTS:
 				ogcFunction.append( "OGC_INTERSECTS" );
@@ -227,7 +229,7 @@ class OracleSDOSupport implements SpatialDialect, Serializable {
 	 */
 	@Override
 	public String getSpatialFilterExpression(String columnName) {
-		final StringBuffer buffer = new StringBuffer( "SDO_FILTER(" );
+		final StringBuilder buffer = new StringBuilder( "SDO_FILTER(" );
 		buffer.append( columnName );
 		buffer.append( ",?) = 'TRUE' " );
 		return buffer.toString();
@@ -243,7 +245,7 @@ class OracleSDOSupport implements SpatialDialect, Serializable {
 	 */
 	@Override
 	public String getSpatialAggregateSQL(String columnName, int aggregation) {
-		final StringBuffer aggregateFunction = new StringBuffer();
+		final StringBuilder aggregateFunction = new StringBuilder();
 		final SpatialAggregate sa = new SpatialAggregate( aggregation );
 
 		if ( sa.getAggregateSyntax() == null ) {
@@ -290,7 +292,7 @@ class OracleSDOSupport implements SpatialDialect, Serializable {
 	 */
 	@Override
 	public String getHavingSridSQL(String columnName) {
-		return String.format( " (MDSYS.ST_GEOMETRY(%s).ST_SRID() = ?)", columnName );
+		return String.format( " (MDSYS.ST_GEOMETRY(%s).ST_SRID() = ?)", columnName , Locale.US);
 	}
 
 	/**
@@ -304,7 +306,7 @@ class OracleSDOSupport implements SpatialDialect, Serializable {
 	 */
 	@Override
 	public String getIsEmptySQL(String columnName, boolean isEmpty) {
-		return String.format( "( MDSYS.ST_GEOMETRY(%s).ST_ISEMPTY() = %d )", columnName, isEmpty ? 1 : 0 );
+		return String.format( "( MDSYS.ST_GEOMETRY(%s).ST_ISEMPTY() = %d )", columnName, isEmpty ? 1 : 0 , Locale.US);
 	}
 
 	/**
@@ -331,4 +333,8 @@ class OracleSDOSupport implements SpatialDialect, Serializable {
 	}
 
 
+	@Override
+	public String filterExpression(String geometryParam, String filterParam) {
+		return SpatialFunction.filter.name() + "(" + geometryParam + ", " + filterParam + ") = 'TRUE' ";
+	}
 }

@@ -554,11 +554,11 @@ public abstract class CollectionBinder {
 
 		collection.setInverse( isMappedBy );
 
-		//many to many may need some second pass informations
+		//many to many may need some second pass information
 		if ( !oneToMany && isMappedBy ) {
 			metadataCollector.addMappedBy( getCollectionType().getName(), mappedBy, propertyName );
 		}
-		//TODO reducce tableBinder != null and oneToMany
+		//TODO reduce tableBinder != null and oneToMany
 		XClass collectionType = getCollectionType();
 		if ( inheritanceStatePerClass == null) throw new AssertionFailure( "inheritanceStatePerClass not set" );
 		SecondPass sp = getSecondPass(
@@ -1240,7 +1240,7 @@ public abstract class CollectionBinder {
 						ConstraintMode foreignKeyValue = joinTableAnn.foreignKey().value();
 						if ( joinTableAnn.joinColumns().length != 0 ) {
 							final JoinColumn joinColumnAnn = joinTableAnn.joinColumns()[0];
-							if ( "".equals( foreignKeyName ) ) {
+							if ( foreignKeyName != null && foreignKeyName.isEmpty() ) {
 								foreignKeyName = joinColumnAnn.foreignKey().name();
 								foreignKeyDefinition = joinColumnAnn.foreignKey().foreignKeyDefinition();
 							}
@@ -1458,7 +1458,7 @@ public abstract class CollectionBinder {
 					ConstraintMode foreignKeyValue = joinTableAnn.inverseForeignKey().value();
 					if ( joinTableAnn.inverseJoinColumns().length != 0 ) {
 						final JoinColumn joinColumnAnn = joinTableAnn.inverseJoinColumns()[0];
-						if ( "".equals( foreignKeyName ) ) {
+						if ( foreignKeyName != null && foreignKeyName.isEmpty() ) {
 							foreignKeyName = joinColumnAnn.foreignKey().name();
 							foreignKeyDefinition = joinColumnAnn.foreignKey().foreignKeyDefinition();
 						}

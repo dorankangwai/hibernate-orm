@@ -89,7 +89,7 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 	}
 
 	/**
-	 *  * @deprecated {@link #AbstractPersistentCollection(SharedSessionContractImplementor)} should be used instead.
+	 * @deprecated {@link #AbstractPersistentCollection(SharedSessionContractImplementor)} should be used instead.
 	 */
 	@Deprecated
 	protected AbstractPersistentCollection(SessionImplementor session) {
@@ -752,7 +752,7 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 		// AST in ORM 5+, handling this type of condition is either extremely difficult or impossible.  Forcing
 		// recreation isn't ideal, but not really any other option in ORM 4.
 		// Selecting a type used in where part of update statement
-		// (must match condidion in org.hibernate.persister.collection.BasicCollectionPersister.doUpdateRows).
+		// (must match condition in org.hibernate.persister.collection.BasicCollectionPersister#doUpdateRows).
 		// See HHH-9474
 		Type whereType;
 		if ( persister.hasIndex() ) {

@@ -107,12 +107,27 @@ ext {
                         'jdbc.pass'  : 'H1bernate_test',
                         'jdbc.url'   : 'jdbc:sap://localhost:30015/'
                 ],
+                hana_cloud : [
+                        'db.dialect' : 'org.hibernate.dialect.HANACloudColumnStoreDialect',
+                        'jdbc.driver': 'com.sap.db.jdbc.Driver',
+                        'jdbc.user'  : 'HIBERNATE_TEST',
+                        'jdbc.pass'  : 'H1bernate_test',
+                        'jdbc.url'   : 'jdbc:sap://localhost:443/?encrypt=true&validateCertificate=false'
+                ],
                 hana_vlad : [
                         'db.dialect' : 'org.hibernate.dialect.HANAColumnStoreDialect',
                         'jdbc.driver': 'com.sap.db.jdbc.Driver',
                         'jdbc.user'  : 'VLAD',
                         'jdbc.pass'  : 'V1ad_test',
                         'jdbc.url'   : 'jdbc:sap://localhost:39015/'
-                ]
+                ],
+                cockroachdb : [
+                        'db.dialect' : 'org.hibernate.dialect.CockroachDB192Dialect',
+                        // CockroachDB uses the same pgwire protocol as PostgreSQL, so the driver is the same.
+                        'jdbc.driver': 'org.postgresql.Driver',
+                        'jdbc.user'  : 'root',
+                        'jdbc.pass'  : '',
+                        'jdbc.url'   : 'jdbc:postgresql://localhost:26257/defaultdb?sslmode=disable'
+                ],
         ]
 }

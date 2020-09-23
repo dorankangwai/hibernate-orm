@@ -35,6 +35,7 @@ import org.hibernate.dialect.H2Dialect;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.internal.build.AllowSysOut;
+import org.hibernate.internal.util.ReflectHelper;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.internal.util.config.ConfigurationHelper;
 import org.hibernate.jdbc.AbstractReturningWork;
@@ -236,6 +237,11 @@ public abstract class BaseCoreFunctionalTestCase extends BaseUnitTestCase {
 		return NO_MAPPINGS;
 	}
 
+	/**
+	 *
+	 * @deprecated (Since 6.0) this method will be renamed to getOrmXmlFile().
+	 */
+	@Deprecated
 	protected String[] getXmlFiles() {
 		// todo : rename to getOrmXmlFiles()
 		return NO_MAPPINGS;
@@ -345,6 +351,11 @@ public abstract class BaseCoreFunctionalTestCase extends BaseUnitTestCase {
 
 	@After
 	public final void afterTest() throws Exception {
+		// see https://github.com/hibernate/hibernate-orm/pull/3412#issuecomment-678338398
+		if ( getDialect() instanceof H2Dialect ) {
+			ReflectHelper.getMethod( Class.forName( "org.h2.util.DateTimeUtils" ), "resetCalendar" ).invoke( null );
+		}
+
 		completeStrayTransaction();
 
 		if ( isCleanupTestDataRequired() ) {
@@ -420,6 +431,8 @@ public abstract class BaseCoreFunctionalTestCase extends BaseUnitTestCase {
 	}
 
 	public static class RollbackWork implements Work {
+
+		@Override
 		public void execute(Connection connection) throws SQLException {
 			connection.rollback();
 		}
