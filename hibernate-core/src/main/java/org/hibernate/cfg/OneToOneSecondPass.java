@@ -103,7 +103,8 @@ public class OneToOneSecondPass implements SecondPass {
 				inferredData.getProperty(),
 				inferredData.getProperty().getAnnotation( javax.persistence.ForeignKey.class ),
 				inferredData.getProperty().getAnnotation( JoinColumn.class ),
-				inferredData.getProperty().getAnnotation( JoinColumns.class )
+				inferredData.getProperty().getAnnotation( JoinColumns.class),
+				buildingContext
 		);
 
 		PropertyBinder binder = new PropertyBinder();
@@ -236,17 +237,6 @@ public class OneToOneSecondPass implements SecondPass {
 				boolean referenceToPrimaryKey  = referencesDerivedId || mappedBy == null;
 				value.setReferenceToPrimaryKey( referenceToPrimaryKey );
 
-				// If the other side is a derived ID, and both sides are eager using FetchMode.JOIN,
-				// prevent an infinite loop of attempts to resolve identifiers by making
-				// this side use FetchMode.SELECT.
-				if ( referencesDerivedId &&
-						!value.isLazy() &&
-						value.getFetchMode() == FetchMode.JOIN &&
-						!otherSideProperty.isLazy() &&
-						otherSideProperty.getValue().getFetchMode() == FetchMode.JOIN ) {
-					value.setFetchMode( FetchMode.SELECT );
-				}
-
 				String propertyRef = value.getReferencedPropertyName();
 				if ( propertyRef != null ) {
 					buildingContext.getMetadataCollector().addUniquePropertyReference(
@@ -275,7 +265,8 @@ public class OneToOneSecondPass implements SecondPass {
 	 * Note:<br/>
 	 * <ul>
 	 * <li>From the mappedBy side we should not create the PK nor the FK, this is handled from the other side.</li>
-	 * <li>This method is a dirty dupe of EntityBinder.bindSecondaryTable</i>.
+	 * <li>This method is a dirty dupe of EntityBinder.bindSecondaryTable</li>.
+	 * </ul>
 	 * </p>
 	 */
 	private Join buildJoinFromMappedBySide(PersistentClass persistentClass, Property otherSideProperty, Join originalJoin) {

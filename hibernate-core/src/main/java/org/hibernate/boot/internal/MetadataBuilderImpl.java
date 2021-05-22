@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import javax.persistence.AttributeConverter;
+import javax.persistence.ConstraintMode;
 import javax.persistence.SharedCacheMode;
 
 import org.hibernate.HibernateException;
@@ -330,6 +331,11 @@ public class MetadataBuilderImpl implements MetadataBuilderImplementor, TypeCont
 		return this;
 	}
 
+	public MetadataBuilder noConstraintByDefault() {
+		this.options.noConstraintByDefault = true;
+		return this;
+	}
+
 	@Override
 	public MetadataBuilder applySqlFunction(String functionName, SQLFunction function) {
 		this.bootstrapContext.addSqlFunction( functionName, function );
@@ -610,12 +616,13 @@ public class MetadataBuilderImpl implements MetadataBuilderImplementor, TypeCont
 		private boolean implicitlyForceDiscriminatorInSelect;
 		private boolean useNationalizedCharacterData;
 		private boolean specjProprietarySyntaxEnabled;
+		private boolean noConstraintByDefault;
 		private ArrayList<MetadataSourceType> sourceProcessOrdering;
 
 		private IdGeneratorInterpreterImpl idGenerationTypeInterpreter = new IdGeneratorInterpreterImpl();
 
 		private String schemaCharset;
-		private boolean xmlMappingEnabled;
+		private final boolean xmlMappingEnabled;
 
 		public MetadataBuildingOptionsImpl(StandardServiceRegistry serviceRegistry) {
 			this.serviceRegistry = serviceRegistry;
@@ -652,7 +659,7 @@ public class MetadataBuilderImpl implements MetadataBuilderImplementor, TypeCont
 			);
 
 			this.sharedCacheMode = configService.getSetting(
-					"javax.persistence.sharedCache.mode",
+					AvailableSettings.JPA_SHARED_CACHE_MODE,
 					new ConfigurationService.Converter<SharedCacheMode>() {
 						@Override
 						public SharedCacheMode convert(Object value) {
@@ -667,7 +674,24 @@ public class MetadataBuilderImpl implements MetadataBuilderImplementor, TypeCont
 							return SharedCacheMode.valueOf( value.toString() );
 						}
 					},
-					SharedCacheMode.UNSPECIFIED
+					configService.getSetting(
+							AvailableSettings.JAKARTA_JPA_SHARED_CACHE_MODE,
+							new ConfigurationService.Converter<SharedCacheMode>() {
+								@Override
+								public SharedCacheMode convert(Object value) {
+									if ( value == null ) {
+										return null;
+									}
+
+									if ( SharedCacheMode.class.isInstance( value ) ) {
+										return (SharedCacheMode) value;
+									}
+
+									return SharedCacheMode.valueOf( value.toString() );
+								}
+							},
+							SharedCacheMode.UNSPECIFIED
+					)
 			);
 
 			this.defaultCacheAccessType = configService.getSetting(
@@ -701,6 +725,12 @@ public class MetadataBuilderImpl implements MetadataBuilderImplementor, TypeCont
 					StandardConverters.BOOLEAN,
 					false
 			);
+
+			this.noConstraintByDefault = ConstraintMode.NO_CONSTRAINT.name().equalsIgnoreCase( configService.getSetting(
+					AvailableSettings.HBM2DDL_DEFAULT_CONSTRAINT_MODE,
+					String.class,
+					null
+			) );
 
 			this.implicitNamingStrategy = strategySelector.resolveDefaultableStrategy(
 					ImplicitNamingStrategy.class,
@@ -880,6 +910,11 @@ public class MetadataBuilderImpl implements MetadataBuilderImplementor, TypeCont
 		@Override
 		public boolean isSpecjProprietarySyntaxEnabled() {
 			return specjProprietarySyntaxEnabled;
+		}
+
+		@Override
+		public boolean isNoConstraintByDefault() {
+			return noConstraintByDefault;
 		}
 
 		@Override

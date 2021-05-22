@@ -8,7 +8,6 @@ package org.hibernate.cfg;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -123,7 +122,7 @@ import org.hibernate.annotations.Tuplizers;
 import org.hibernate.annotations.TypeDef;
 import org.hibernate.annotations.TypeDefs;
 import org.hibernate.annotations.Where;
-import org.hibernate.annotations.common.reflection.ClassLoadingException;
+import org.hibernate.annotations.common.reflection.ReflectionManager;
 import org.hibernate.annotations.common.reflection.XAnnotatedElement;
 import org.hibernate.annotations.common.reflection.XClass;
 import org.hibernate.annotations.common.reflection.XMethod;
@@ -132,6 +131,7 @@ import org.hibernate.annotations.common.reflection.XProperty;
 import org.hibernate.boot.model.IdGeneratorStrategyInterpreter;
 import org.hibernate.boot.model.IdentifierGeneratorDefinition;
 import org.hibernate.boot.model.TypeDefinition;
+import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
 import org.hibernate.boot.spi.InFlightMetadataCollector;
 import org.hibernate.boot.spi.InFlightMetadataCollector.EntityTableXref;
 import org.hibernate.boot.spi.MetadataBuildingContext;
@@ -145,6 +145,7 @@ import org.hibernate.cfg.annotations.PropertyBinder;
 import org.hibernate.cfg.annotations.QueryBinder;
 import org.hibernate.cfg.annotations.SimpleValueBinder;
 import org.hibernate.cfg.annotations.TableBinder;
+import org.hibernate.cfg.internal.NullableDiscriminatorColumnSecondPass;
 import org.hibernate.engine.OptimisticLockStyle;
 import org.hibernate.engine.spi.FilterDefinition;
 import org.hibernate.id.PersistentIdentifierGenerator;
@@ -304,19 +305,12 @@ public final class AnnotationBinder {
 		}
 	}
 
-	public static void bindPackage(String packageName, MetadataBuildingContext context) {
-		XPackage pckg;
-		try {
-			pckg = context.getBootstrapContext().getReflectionManager().packageForName( packageName );
-		}
-		catch (ClassLoadingException e) {
-			LOG.packageNotFound( packageName );
+	public static void bindPackage(ClassLoaderService cls, String packageName, MetadataBuildingContext context) {
+		final Package packaze = cls.packageForNameOrNull( packageName );
+		if ( packaze == null ) {
 			return;
 		}
-		catch ( ClassNotFoundException cnf ) {
-			LOG.packageNotFound( packageName );
-			return;
-		}
+		final XPackage pckg = context.getBootstrapContext().getReflectionManager().toXPackage( packaze );
 
 		if ( pckg.isAnnotationPresent( SequenceGenerator.class ) ) {
 			SequenceGenerator ann = pckg.getAnnotation( SequenceGenerator.class );
@@ -370,59 +364,67 @@ public final class AnnotationBinder {
 		context.getMetadataCollector().addIdentifierGenerator( buildIdGenerator( def, context ) );
 	}
 
-	private static void bindQueries(XAnnotatedElement annotatedElement, MetadataBuildingContext context) {
-		{
-			SqlResultSetMapping ann = annotatedElement.getAnnotation( SqlResultSetMapping.class );
-			QueryBinder.bindSqlResultSetMapping( ann, context, false );
-		}
-		{
-			SqlResultSetMappings ann = annotatedElement.getAnnotation( SqlResultSetMappings.class );
-			if ( ann != null ) {
-				for ( SqlResultSetMapping current : ann.value() ) {
-					QueryBinder.bindSqlResultSetMapping( current, context, false );
-				}
+	private static void bindNamedJpaQueries(XAnnotatedElement annotatedElement, MetadataBuildingContext context) {
+		QueryBinder.bindSqlResultSetMapping(
+				annotatedElement.getAnnotation( SqlResultSetMapping.class ),
+				context,
+				false
+		);
+
+		final SqlResultSetMappings ann = annotatedElement.getAnnotation( SqlResultSetMappings.class );
+		if ( ann != null ) {
+			for ( SqlResultSetMapping current : ann.value() ) {
+				QueryBinder.bindSqlResultSetMapping( current, context, false );
 			}
 		}
-		{
-			NamedQuery ann = annotatedElement.getAnnotation( NamedQuery.class );
-			QueryBinder.bindQuery( ann, context, false );
-		}
-		{
-			org.hibernate.annotations.NamedQuery ann = annotatedElement.getAnnotation(
-					org.hibernate.annotations.NamedQuery.class
-			);
-			QueryBinder.bindQuery( ann, context );
-		}
-		{
-			NamedQueries ann = annotatedElement.getAnnotation( NamedQueries.class );
-			QueryBinder.bindQueries( ann, context, false );
-		}
-		{
-			org.hibernate.annotations.NamedQueries ann = annotatedElement.getAnnotation(
-					org.hibernate.annotations.NamedQueries.class
-			);
-			QueryBinder.bindQueries( ann, context );
-		}
-		{
-			NamedNativeQuery ann = annotatedElement.getAnnotation( NamedNativeQuery.class );
-			QueryBinder.bindNativeQuery( ann, context, false );
-		}
-		{
-			org.hibernate.annotations.NamedNativeQuery ann = annotatedElement.getAnnotation(
-					org.hibernate.annotations.NamedNativeQuery.class
-			);
-			QueryBinder.bindNativeQuery( ann, context );
-		}
-		{
-			NamedNativeQueries ann = annotatedElement.getAnnotation( NamedNativeQueries.class );
-			QueryBinder.bindNativeQueries( ann, context, false );
-		}
-		{
-			org.hibernate.annotations.NamedNativeQueries ann = annotatedElement.getAnnotation(
-					org.hibernate.annotations.NamedNativeQueries.class
-			);
-			QueryBinder.bindNativeQueries( ann, context );
-		}
+
+		QueryBinder.bindQuery(
+				annotatedElement.getAnnotation( NamedQuery.class ),
+				context,
+				false
+		);
+
+		QueryBinder.bindQueries(
+				annotatedElement.getAnnotation( NamedQueries.class ),
+				context,
+				false
+		);
+
+		QueryBinder.bindNativeQuery(
+				annotatedElement.getAnnotation( NamedNativeQuery.class ),
+				context,
+				false
+		);
+
+		QueryBinder.bindNativeQueries(
+				annotatedElement.getAnnotation( NamedNativeQueries.class ),
+				context,
+				false
+		);
+	}
+
+	private static void bindQueries(XAnnotatedElement annotatedElement, MetadataBuildingContext context) {
+		bindNamedJpaQueries( annotatedElement, context );
+
+		QueryBinder.bindQuery(
+				annotatedElement.getAnnotation( org.hibernate.annotations.NamedQuery.class ),
+				context
+		);
+
+		QueryBinder.bindQueries(
+				annotatedElement.getAnnotation( org.hibernate.annotations.NamedQueries.class ),
+				context
+		);
+
+		QueryBinder.bindNativeQuery(
+				annotatedElement.getAnnotation( org.hibernate.annotations.NamedNativeQuery.class ),
+				context
+		);
+
+		QueryBinder.bindNativeQueries(
+				annotatedElement.getAnnotation( org.hibernate.annotations.NamedNativeQueries.class ),
+				context
+		);
 
 		// NamedStoredProcedureQuery handling ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 		bindNamedStoredProcedureQuery(
@@ -707,15 +709,17 @@ public final class AnnotationBinder {
 				else {
 					final PrimaryKeyJoinColumn pkJoinColumn = clazzToProcess.getAnnotation( PrimaryKeyJoinColumn.class );
 					final PrimaryKeyJoinColumns pkJoinColumns = clazzToProcess.getAnnotation( PrimaryKeyJoinColumns.class );
-
-					if ( pkJoinColumns != null && pkJoinColumns.foreignKey().value() == ConstraintMode.NO_CONSTRAINT ) {
+					final boolean noConstraintByDefault = context.getBuildingOptions().isNoConstraintByDefault();
+					if ( pkJoinColumns != null && ( pkJoinColumns.foreignKey().value() == ConstraintMode.NO_CONSTRAINT
+							|| pkJoinColumns.foreignKey().value() == ConstraintMode.PROVIDER_DEFAULT && noConstraintByDefault ) ) {
 						// don't apply a constraint based on ConstraintMode
 						key.setForeignKeyName( "none" );
 					}
 					else if ( pkJoinColumns != null && !StringHelper.isEmpty( pkJoinColumns.foreignKey().name() ) ) {
 						key.setForeignKeyName( pkJoinColumns.foreignKey().name() );
 					}
-					else if ( pkJoinColumn != null && pkJoinColumn.foreignKey().value() == ConstraintMode.NO_CONSTRAINT ) {
+					else if ( pkJoinColumn != null && ( pkJoinColumn.foreignKey().value() == ConstraintMode.NO_CONSTRAINT
+							|| pkJoinColumn.foreignKey().value() == ConstraintMode.PROVIDER_DEFAULT && noConstraintByDefault )) {
 						// don't apply a constraint based on ConstraintMode
 						key.setForeignKeyName( "none" );
 					}
@@ -1419,20 +1423,13 @@ public final class AnnotationBinder {
 		bindFetchProfiles( clazzToProcess, context );
 	}
 
-	public static void bindFetchProfilesForPackage(String packageName, MetadataBuildingContext context) {
-		XPackage pckg;
-		try {
-			pckg = context.getBootstrapContext().getReflectionManager().packageForName( packageName );
-		}
-		catch (ClassLoadingException e) {
-			LOG.packageNotFound( packageName );
+	public static void bindFetchProfilesForPackage(ClassLoaderService cls, String packageName, MetadataBuildingContext context) {
+		final Package packaze = cls.packageForNameOrNull( packageName );
+		if ( packaze == null ) {
 			return;
 		}
-		catch ( ClassNotFoundException cnf ) {
-			LOG.packageNotFound( packageName );
-			return;
-		}
-
+		final ReflectionManager reflectionManager = context.getBootstrapContext().getReflectionManager();
+		final XPackage pckg = reflectionManager.toXPackage( packaze );
 		bindFetchProfiles( pckg, context );
 	}
 
@@ -1487,6 +1484,8 @@ public final class AnnotationBinder {
 			if ( LOG.isTraceEnabled() ) {
 				LOG.tracev( "Setting discriminator for entity {0}", rootClass.getEntityName() );
 			}
+			context.getMetadataCollector().addSecondPass(
+					new NullableDiscriminatorColumnSecondPass( rootClass.getEntityName() ) );
 		}
 	}
 
@@ -1503,8 +1502,7 @@ public final class AnnotationBinder {
 			MetadataBuildingContext context) {
 		int idPropertyCounter = 0;
 
-		Collection<XProperty> properties = propertyContainer.getProperties();
-		for ( XProperty p : properties ) {
+		for ( XProperty p : propertyContainer.propertyIterator() ) {
 			final int currentIdPropertyCounter = addProperty(
 					propertyContainer,
 					p,
@@ -3093,7 +3091,8 @@ public final class AnnotationBinder {
 				property,
 				propertyHolder.getOverriddenForeignKey( StringHelper.qualify( propertyHolder.getPath(), propertyName ) ),
 				joinColumn,
-				joinColumns
+				joinColumns,
+				context
 		);
 
 		String path = propertyHolder.getPath() + "." + propertyName;
@@ -3165,7 +3164,8 @@ public final class AnnotationBinder {
 		}
 		else {
 			toOne.setLazy( fetchType == FetchType.LAZY );
-			toOne.setUnwrapProxy( false );
+			toOne.setUnwrapProxy( fetchType != FetchType.LAZY );
+			toOne.setUnwrapProxyImplicit( true );
 		}
 		if ( fetch != null ) {
 			if ( fetch.value() == org.hibernate.annotations.FetchMode.JOIN ) {
@@ -3439,9 +3439,13 @@ public final class AnnotationBinder {
 			XProperty property,
 			javax.persistence.ForeignKey fkOverride,
 			JoinColumn joinColumn,
-			JoinColumns joinColumns) {
-		if ( ( joinColumn != null && joinColumn.foreignKey().value() == ConstraintMode.NO_CONSTRAINT )
-				|| ( joinColumns != null && joinColumns.foreignKey().value() == ConstraintMode.NO_CONSTRAINT ) ) {
+			JoinColumns joinColumns,
+			MetadataBuildingContext context) {
+		final boolean noConstraintByDefault = context.getBuildingOptions().isNoConstraintByDefault();
+		if ( ( joinColumn != null && ( joinColumn.foreignKey().value() == ConstraintMode.NO_CONSTRAINT
+				|| joinColumn.foreignKey().value() == ConstraintMode.PROVIDER_DEFAULT && noConstraintByDefault ) )
+				|| ( joinColumns != null && ( joinColumns.foreignKey().value() == ConstraintMode.NO_CONSTRAINT
+				|| joinColumns.foreignKey().value() == ConstraintMode.PROVIDER_DEFAULT && noConstraintByDefault ) ) ) {
 			value.setForeignKeyName( "none" );
 		}
 		else {
@@ -3450,7 +3454,8 @@ public final class AnnotationBinder {
 				value.setForeignKeyName( fk.name() );
 			}
 			else {
-				if ( fkOverride != null && fkOverride.value() == ConstraintMode.NO_CONSTRAINT ) {
+				if ( fkOverride != null && ( fkOverride.value() == ConstraintMode.NO_CONSTRAINT
+						|| fkOverride.value() == ConstraintMode.PROVIDER_DEFAULT && noConstraintByDefault ) ) {
 					value.setForeignKeyName( "none" );
 				}
 				else if ( fkOverride != null ) {

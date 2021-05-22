@@ -72,13 +72,8 @@ public abstract class AbstractRowReader implements RowReader {
 			entityReferenceInitializers = Collections.<EntityReferenceInitializer>emptyList();
 			entityInitializerByEntityReference = Collections.<EntityReference,EntityReferenceInitializer>emptyMap();
 		}
-		this.arrayReferenceInitializers = CollectionHelper.isNotEmpty( readerCollector.getArrayReferenceInitializers() )
-				? new ArrayList<CollectionReferenceInitializer>( readerCollector.getArrayReferenceInitializers() )
-				: Collections.<CollectionReferenceInitializer>emptyList();
-		this.collectionReferenceInitializers =
-				CollectionHelper.isNotEmpty ( readerCollector.getNonArrayCollectionReferenceInitializers() )
-				? new ArrayList<CollectionReferenceInitializer>( readerCollector.getNonArrayCollectionReferenceInitializers() )
-				: Collections.<CollectionReferenceInitializer>emptyList();
+		this.arrayReferenceInitializers = readerCollector.getArrayReferenceInitializers();
+		this.collectionReferenceInitializers = readerCollector.getNonArrayCollectionReferenceInitializers();
 	}
 
 	protected abstract Object readLogicalRow(ResultSet resultSet, ResultSetProcessingContextImpl context)
@@ -242,20 +237,13 @@ public abstract class AbstractRowReader implements RowReader {
 		}
 
 		final SharedSessionContractImplementor session = context.getSession();
-		final Iterable<PreLoadEventListener> listeners = session
-			.getFactory()
-			.getServiceRegistry()
-			.getService( EventListenerRegistry.class )
-			.getEventListenerGroup( EventType.PRE_LOAD )
-			.listeners();
 
 		for ( HydratedEntityRegistration registration : hydratedEntityRegistrations ) {
 			TwoPhaseLoad.initializeEntity(
 					registration.getInstance(),
 					context.isReadOnly(),
 					session,
-					preLoadEvent,
-					listeners
+					preLoadEvent
 			);
 		}
 	}

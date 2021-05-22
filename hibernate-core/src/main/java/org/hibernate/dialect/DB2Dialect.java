@@ -235,6 +235,11 @@ public class DB2Dialect extends Dialect {
 	}
 
 	@Override
+	public String[] getDropSchemaCommand(String schemaName) {
+		return new String[] {"drop schema " + schemaName + " restrict"};
+	}
+
+	@Override
 	public String getSequenceNextValString(String sequenceName) {
 		return "values nextval for " + sequenceName;
 	}
@@ -578,7 +583,7 @@ public class DB2Dialect extends Dialect {
 				nullPrecedence == NullPrecedence.FIRST ? "0" : "1",
 				nullPrecedence == NullPrecedence.FIRST ? "1" : "0",
 				expression,
-				order
+				order == null ? "asc" : order
 		);
 	}
 

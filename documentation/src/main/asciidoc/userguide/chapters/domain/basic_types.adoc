@@ -1136,7 +1136,7 @@ Programmatically::
 TimeZone.setDefault( TimeZone.getTimeZone( "UTC" ) );
 ----
 
-However, as explained in http://in.relation.to/2016/09/12/jdbc-time-zone-configuration-property/[this article], this is not always practical, especially for front-end nodes.
+However, as explained in https://in.relation.to/2016/09/12/jdbc-time-zone-configuration-property/[this article], this is not always practical, especially for front-end nodes.
 For this reason, Hibernate offers the `hibernate.jdbc.time_zone` configuration property which can be configured:
 
 Declaratively, at the `SessionFactory` level::
@@ -1448,7 +1448,7 @@ include::{sourcedir}/generated/GeneratorTypeTest.java[tags=mapping-generated-Gen
 When the `Person` entity is persisted, Hibernate is going to populate the `createdBy` column with the currently logged user.
 
 [[mapping-generated-GeneratorType-persist-example]]
-.`@Generated` persist example
+.`@GeneratorType` persist example
 ====
 [source, JAVA, indent=0]
 ----
@@ -1465,7 +1465,7 @@ The same goes when the `Person` entity is updated.
 Hibernate is going to populate the `updatedBy` column with the currently logged user.
 
 [[mapping-generated-GeneratorType-update-example]]
-.`@Generated` update example
+.`@GeneratorType` update example
 ====
 [source, JAVA, indent=0]
 ----
